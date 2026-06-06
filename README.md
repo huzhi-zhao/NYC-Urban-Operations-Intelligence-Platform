@@ -6,18 +6,10 @@ NYC Urban Operations Intelligence Platform (NYC-UOIP)
 
 ### 仓库架构
 
+[项目包结构规划](./docs/nyc-uoip-repo-structure.html)
+
 ![](./docs/nyc_uoip_architecture.svg)
 
-```text
-project-root/          ← 整个项目根
-├── CLAUDE.md          ← 必须在根，Claude Code 从根目录读取
-├── AGENTS.md          ← 必须在根，所有 AI agent 工具的约定
-├── .github/
-│   └── copilot-instructions.md
-├── datacontract.yaml  ← 项目顶级契约入口，惯例放根目录
-├── README.md
-│
-```
 
 
 
