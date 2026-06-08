@@ -1,0 +1,10 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+
+# Service account keys - NEVER commit these
+keys/
+*.json
+!keys/.gitignore

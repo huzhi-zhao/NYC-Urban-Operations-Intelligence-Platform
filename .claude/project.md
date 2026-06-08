@@ -56,7 +56,18 @@ Score = 0.4 × 311_Request_Volume + 0.4 × Collision_Factor + 0.2 × Weather_Fac
 ```
 Per Borough per day. Rules-based (no ML). SQL-driven in `sql/intelligence/`.
 
+## Implemented modules
+- `ingestion/clients/socrata_client.py` — reusable Socrata API client (pagination, retry, App Token)
+- `ingestion/loaders/gcs_loader.py` — GCS Bronze writer with manifest generation
+- `scripts/backfill/backfill_nyc_311.py` — one-time backfill for last 3 months of 311 data
+
+## Storage paths (Bronze layer)
+- Monthly shard: `bronze/raw/SRC-NYC-001/nyc_311/month=YYYY-MM/data.json`
+- Monthly manifest: `bronze/raw/SRC-NYC-001/nyc_311/month=YYYY-MM/manifest_{YYYY-MM}.json`
+
 ## Key coding rules
+
+## Build commands
 - Python: `ruff`, line length 100, type hints required
 - SQL: `sqlfluff`, dialect `bigquery` (P1) / `trino` (P2), keywords UPPERCASE, no `SELECT *` in Gold
 - DAGs: scheduling logic ONLY, no business logic inline, use `execution_date` not `datetime.now()`

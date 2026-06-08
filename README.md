@@ -6,6 +6,10 @@ NYC Urban Operations Intelligence Platform (NYC-UOIP)
 
 ### 仓库架构
 
+- 安装依赖  
+`pip install -e .`  
+`uv sync --extra dev`
+
 [项目包结构规划](./docs/nyc-uoip-repo-structure.html)
 
 ![](./docs/nyc_uoip_architecture.svg)
