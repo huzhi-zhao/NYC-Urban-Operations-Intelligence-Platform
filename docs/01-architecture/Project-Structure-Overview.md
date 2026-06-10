@@ -14,10 +14,6 @@
 
 ## 1. 系统架构总览 (System Architecture Overview)
 
-![NYC-UOIP Architecture Diagram](https://i.imgur.com/example_architecture.png)
-
- _(Note: As an AI, I cannot generate actual images directly. Please imagine a standard Lakehouse architecture diagram here, showing data flow from left to right as described below.)_
-
 **核心组件和数据流：**
 
 1. **数据源 (Data Sources):**
