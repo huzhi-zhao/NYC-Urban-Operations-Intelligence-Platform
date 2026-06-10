@@ -26,7 +26,7 @@ Bronze Layer  →  Silver Layer  →  Gold Layer
 ```
 ![](./docs/nyc_uoip_architecture.svg)
 ### Package Structure
-![Complete Package Structure](./docs/nyc-uoip-repo-structure.html)
+![Complete Package Structure](./docs/NYC-UOIP-Repository%20Structure.pdf)
 ```
 nyc-uoip/
 ├── ingestion/           # API clients & loaders

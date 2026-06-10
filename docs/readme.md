@@ -1,4 +1,4 @@
-![modern_data_eng_docs_structure.svg](modern_data_eng_docs_structure.svg)
+![modern_data_eng_docs_structure.svg](modern_project_structure.svg)
 
 
 ```text
