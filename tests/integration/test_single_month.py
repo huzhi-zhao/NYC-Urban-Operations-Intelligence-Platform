@@ -34,7 +34,7 @@ BUCKET = os.environ.get("GCS_BUCKET_NAME", "")
 CREDS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
 APP_TOKEN = os.environ.get("SOCRATA_APP_TOKEN", "") or None
 
-SOURCE_ID = "SRC-NYC-001"
+SOURCE_ID = "SRC-NYC-311"
 DATASET_NAME = "nyc_311"
 TIMESTAMP_FIELD = "created_date"
 TEST_MONTH = "2026-02"  # Fixed month for stable test
@@ -48,8 +48,8 @@ TEST_END = date(2026, 3, 1)
 def clients():
     if not BUCKET:
         pytest.skip("GCS_BUCKET_NAME not set")
-    if not CREDS:
-        pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not set")
+    # if not CREDS:
+    #     pytest.skip("GOOGLE_APPLICATION_CREDENTIALS not set")
     socrata = SocrataClient(
         resource_id="erm2-nwe9",
         domain="data.cityofnewyork.us",

@@ -1,0 +1,22 @@
+source:
+  id: SRC-Open-Meteo
+  name: Open-Meteo Weather
+  type: rest_api
+  owner: weather_team
+  priority: P1
+  status: production
+  description: 开源气象 API，逐小时历史与未来 7 天预报
+
+datasets:
+  - name: nyc_weather_forecast
+    description: NYC 逐小时天气（未来 7 天 + 过去 3 天覆盖式 snapshot）
+    api_type: open_meteo
+    endpoint: https://api.open-meteo.com/v1/forecast
+    timestamp_field: time
+    query_params:
+      latitude: 40.7143
+      longitude: -74.006
+      hourly: temperature_2m,precipitation,snowfall,windspeed_10m
+      timezone: America/New_York
+      past_days: 3
+      forecast_days: 7

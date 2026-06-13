@@ -63,12 +63,14 @@ resource "google_storage_bucket" "bronze" {
   }
 
   lifecycle_rule {
-    condition {
-      age = 90  # Archive after 90 days
-    }
-    action {
-      type = "Delete"
-    }
+    action { type = "SetStorageClass"  storage_class = "COLDLINE" }
+    condition { age = 90 }
+  #   condition {
+  #     age = 90  # Archive after 90 days, 90后GCP不免费了
+  #   }
+  #   action {
+  #     type = "Delete"
+  #   }
   }
 }
 

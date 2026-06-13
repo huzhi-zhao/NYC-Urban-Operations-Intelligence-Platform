@@ -20,8 +20,8 @@ layers → daily Operational Load Score per Borough → resource allocation reco
 ## Before writing any code
 
 1. Read the relevant `contracts/` file for the dataset you are touching.
-   Source IDs: `SRC-NYC-001` (311), `SRC-NYC-002` (NYPD), `SRC-NYC-003` (weather),
-   `SRC-NYC-004` (borough GeoJSON).
+   Source IDs: `SRC-NYC-311` (311), `SRC-NYPD` (NYPD), `SRC-Open-Meteo` (weather),
+   `SRC-DCP` (borough GeoJSON).
 2. Check `spark/schemas/` for the Silver StructType before writing transform logic.
 3. Check `sql/ddl/` for the Gold table definition before writing DML.
 4. Never assume field names from memory — verify against `contracts/api-contracts/`.

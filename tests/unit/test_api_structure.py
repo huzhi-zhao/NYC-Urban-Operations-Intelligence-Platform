@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from ingestion.clients.socrata_client import SocrataClient
 
-# Expected Socrata fields for SRC-NYC-001 (311)
+# Expected Socrata fields for SRC-NYC-311 (311)
 REQUIRED_FIELDS = [
     "unique_key",
     "created_date",

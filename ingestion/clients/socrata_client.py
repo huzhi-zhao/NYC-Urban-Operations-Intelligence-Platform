@@ -7,7 +7,7 @@ Supports:
 - Optional App Token for higher rate limits
 - Incremental fetch by timestamp field
 
-Used by: SRC-NYC-001 (311), SRC-NYC-002 (NYPD Collisions)
+Used by: SRC-NYC-311 (311), SRC-NYPD (NYPD Collisions)
 """
 
 from __future__ import annotations

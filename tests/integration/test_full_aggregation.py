@@ -33,7 +33,7 @@ BUCKET = os.environ.get("GCS_BUCKET_NAME", "")
 CREDS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
 APP_TOKEN = os.environ.get("SOCRATA_APP_TOKEN", "") or None
 
-SOURCE_ID = "SRC-NYC-001"
+SOURCE_ID = "SRC-NYC-311"
 DATASET_NAME = "nyc_311"
 TIMESTAMP_FIELD = "created_date"
 N_MONTHS = 3

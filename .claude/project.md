@@ -31,10 +31,10 @@ Switch via `DEPLOYMENT_PHASE=1` or `DEPLOYMENT_PHASE=2`.
 
 | ID | Source | Key fields |
 |---|---|---|
-| SRC-NYC-001 | NYC 311 Socrata API (`erm2-nwe9.json`) | `created_date`, `complaint_type`, `borough`, `latitude`, `longitude` |
-| SRC-NYC-002 | NYPD Collisions Socrata API (`h9gi-nx95.json`) | `crash_date`, `borough`, `latitude`, `longitude`, `number_of_persons_injured` |
-| SRC-NYC-003 | Open-Meteo forecast API | `time`, `temperature_2m`, `snowfall`, `precipitation`, `windspeed_10m` |
-| SRC-NYC-004 | NYC Borough GeoJSON (static) | `boro_code`, `boro_name`, `geometry` (polygon) |
+| SRC-NYC-311 | NYC 311 Socrata API (`erm2-nwe9.json`) | `created_date`, `complaint_type`, `borough`, `latitude`, `longitude` |
+| SRC-NYPD | NYPD Collisions Socrata API (`h9gi-nx95.json`) | `crash_date`, `borough`, `latitude`, `longitude`, `number_of_persons_injured` |
+| SRC-Open-Meteo | Open-Meteo forecast API | `time`, `temperature_2m`, `snowfall`, `precipitation`, `windspeed_10m` |
+| SRC-DCP | NYC Borough GeoJSON (static) | `boro_code`, `boro_name`, `geometry` (polygon) |
 
 All contracts live in `contracts/source-registry.md` and `contracts/api-contracts/`.
 
@@ -62,8 +62,8 @@ Per Borough per day. Rules-based (no ML). SQL-driven in `sql/intelligence/`.
 - `scripts/backfill/backfill_nyc_311.py` — one-time backfill for last 3 months of 311 data
 
 ## Storage paths (Bronze layer)
-- Monthly shard: `bronze/raw/SRC-NYC-001/nyc_311/month=YYYY-MM/data.json`
-- Monthly manifest: `bronze/raw/SRC-NYC-001/nyc_311/month=YYYY-MM/manifest_{YYYY-MM}.json`
+- Monthly shard: `bronze/raw/SRC-NYC-311/nyc_311/month=YYYY-MM/data.json`
+- Monthly manifest: `bronze/raw/SRC-NYC-311/nyc_311/month=YYYY-MM/manifest_{YYYY-MM}.json`
 
 ## Key coding rules
 

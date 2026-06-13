@@ -106,7 +106,7 @@ Operational scoring + recommendation rules.
 
 ## Data contracts (`contracts/`)
 
-- `contracts/source-registry.md` — SRC-NYC-001 ~ 004 authority list
+- `contracts/source-registry.md` — SRC-NYC-311 / SRC-NYPD / SRC-Open-Meteo / SRC-DCP authority list
 - `contracts/api-contracts/` — JSON Schema per upstream API response
 - `contracts/consumer-contracts/` — Gold layer contract (`gold-layer-contract.yaml`)
 

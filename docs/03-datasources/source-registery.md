@@ -9,12 +9,12 @@
 
 ## 快速索引
 
-|ID|数据源名称|类型|负责团队|状态|优先级|
-|---|---|---|---|---|---|
-|SRC-NYC-001|NYC 311 Service Requests|REST API (Socrata)|城市运营组|✅ 生产|P0|
-|SRC-NYC-002|NYPD Motor Vehicle Collisions|REST API (Socrata)|交通警务组|✅ 生产|P0|
-|SRC-NYC-003|Open-Meteo Weather API|REST API|气象数据组|✅ 生产|P1|
-|SRC-NYC-004|NYC Spatial Boundaries|GeoJSON (Static)|GIS 分析组|✅ 生产|P2|
+| ID         | 数据源名称                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 类型                 | 负责团队    | 状态   | 优先级 |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------- | ---- | --- |
+| NYC 311    | [NYC 311 Service Requests](https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9)                                                                                                                                                                                                                                                                                                                                                                                                                        | REST API (Socrata) | 城市运营组   | ✅ 生产 | P0  |
+| NYPD       | [NYPD Motor Vehicle Collisions](https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95)<br>[NYPD Complaint History](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i/about_data<br>)<br>[NYPD Compliant Current](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243/about_data)<br>[NYPD Shooting Incident Data](https://data.cityofnewyork.us/Public-Safety/ARCHIVED_NYPD-Shooting-Incident-Data-Historic-/833y-fsy8/about_data<br>) | REST API (Socrata) | 警务      | ✅ 生产 | P0  |
+| open-meteo | [Open-Meteo Weather API](https://open-meteo.com/)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | REST API           | 气象数据组   | ✅ 生产 | P1  |
+| DCP        | [NYC Spatial Boundaries](https://data.cityofnewyork.us/City-Government/Borough-Boundaries/gthc-hcne/about_data)                                                                                                                                                                                                                                                                                                                                                                                                                                      | GeoJSON (Static)   | GIS 分析组 | ✅ 生产 | P2  |
 
 **状态说明**：✅ 生产 · 🚧 接入中 · ⏸ 暂停 · ❌ 已下线
 
@@ -24,13 +24,13 @@
 
 ---
 
-### SRC-NYC-001 · NYC 311 Service Requests
+### SRC-NYC-311 · NYC 311 Service Requests
 
 **基本信息**
 
 |字段|内容|
 |---|---|
-|数据源 ID|SRC-NYC-001|
+|数据源 ID|SRC-NYC-311|
 |系统名称|NYC Open Data - 311 Requests|
 |数据类型|市民服务请求（噪音、供暖、街道坑洼等）|
 |接入方式|REST API（Socrata SoQL / 增量拉取）|
@@ -40,11 +40,11 @@
 
 **联系人**
 
-|角色|姓名|联系方式|
-|---|---|---|
-|数据提供方|NYC Open Data Admin|[opendata@doitt.nyc.gov](mailto:opendata@doitt.nyc.gov)|
-|数据工程对接人|数据平台部|#channel-data-eng|
-|紧急联系（On-call）|Airflow 监控告警组|PagerDuty: `nyc-ingestion-alerts`|
+| 角色            | 姓名                  | 联系方式                                                    |
+| ------------- | ------------------- | ------------------------------------------------------- |
+| 数据提供方         | NYC Open Data Admin | [opendata@doitt.nyc.gov](mailto:opendata@doitt.nyc.gov) |
+| 数据工程对接人       | 数据平台部               | #channel-data-eng                                       |
+| 紧急联系（On-call） | Airflow 监控告警组       | PagerDuty: `nyc-ingestion-alerts`                       |
 
 **技术规格**
 
@@ -89,13 +89,38 @@ Auth:         公开免密（如触发限流，需在 Socrata 申请 App Token�
 
 ---
 
-### SRC-NYC-002 · NYPD Motor Vehicle Collisions
+### 市民投诉
+
+- NYPD Complaint Data Historic  
+https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i/about_data
+
+- NYPD Complaint Data Current (Year To Date)  
+https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243/about_data
+
+
+---
+### 约市警察局（NYPD）提供的历史枪击案数据集（NYPD Shooting Incident Data）。
+
+https://data.cityofnewyork.us/Public-Safety/ARCHIVED_NYPD-Shooting-Incident-Data-Historic-/833y-fsy8/about_data
+
+
+数据结构近期发生了重大调整（注意那个“ARCHIVED”标签）  
+最新的替代方案：官方已经把这个单一的数据集拆分成了三个相互关联的全新数据集，它们目前是完全可达且每日更新的：
+
+Shootings (2006-Present) —— 核心案件表：记录每起枪击事件的时间、地点和基本案情（每一行代表一起独立的枪击事件）。
+
+Shooting Victims (2006-Present) —— 受害者细分表：记录枪击案中受害者的年龄、性别、种族等人口统计学信息。
+
+Shooting Offenders (2006-Present) —— 嫌疑人/罪犯细分表：记录已知嫌疑人的相关特征。
+
+---
+### SRC-NYPD · NYPD Motor Vehicle Collisions
 
 **基本信息**
 
 |字段|内容|
 |---|---|
-|数据源 ID|SRC-NYC-002|
+|数据源 ID|SRC-NYPD|
 |系统名称|NYC Open Data - NYPD Collisions|
 |数据类型|交通事故、受伤/死亡人数、事故原因|
 |接入方式|REST API（Socrata SoQL / 增量拉取）|
@@ -125,7 +150,7 @@ Auth:         公开免密
 |---|---|
 |拉取方式|增量（按 `crash_date` 和 `crash_time`）|
 |调度频率|每天 03:00 AM (EST)|
-|限流限制|同 SRC-NYC-001|
+|限流限制|同 SRC-NYC-311|
 |时区|EST|
 
 **数据量估算**
@@ -141,13 +166,13 @@ Auth:         公开免密
 
 ---
 
-### SRC-NYC-003 · Open-Meteo Weather API
+### SRC-Open-Meteo · Open-Meteo Weather API
 
 **基本信息**
 
 |字段|内容|
 |---|---|
-|数据源 ID|SRC-NYC-003|
+|数据源 ID|SRC-Open-Meteo|
 |系统名称|Open-Meteo (开源气象局 API)|
 |数据类型|纽约市逐小时历史天气、未来 7 天天气预报|
 |接入方式|REST API（全量覆盖拉取）|
@@ -185,13 +210,13 @@ Auth:         无（无需 API Key）
 
 ---
 
-### SRC-NYC-004 · NYC Spatial Boundaries
+### SRC-DCP · NYC Spatial Boundaries
 
 **基本信息**
 
 |字段|内容|
 |---|---|
-|数据源 ID|SRC-NYC-004|
+|数据源 ID|SRC-DCP|
 |系统名称|NYC Dept of City Planning|
 |数据类型|Borough (行政区) 和 NTA (社区) 多边形边界|
 |接入方式|静态文件下载|
@@ -201,7 +226,8 @@ Auth:         无（无需 API Key）
 
 **技术规格**
 
-NYC 行政区 (Boroughs) GeoJSON 下载: https://data.cityofnewyork.us/City-Government/Borough-Boundaries/tqmj-j8zm (点击 Export -> GeoJSON)
+NYC 行政区 (Boroughs) GeoJSON 下载: https://data.cityofnewyork.us/City-Government/Borough-Boundaries/gthc-hcne/about_data
+(点击 Export -> GeoJSON)
 
 Text
 
@@ -240,5 +266,5 @@ Text
 
 |日期|变更内容|操作人|
 |---|---|---|
-|2023-10-26|新增 SRC-NYC-003, SRC-NYC-004 天气与空间维度数据源|数据架构师|
-|2023-10-25|确立项目基线，新增 SRC-NYC-001, SRC-NYC-002 核心事件流接入|数据架构师|
+|2023-10-26|新增 SRC-Open-Meteo, SRC-DCP 天气与空间维度数据源|数据架构师|
+|2023-10-25|确立项目基线，新增 SRC-NYC-311, SRC-NYPD 核心事件流接入|数据架构师|

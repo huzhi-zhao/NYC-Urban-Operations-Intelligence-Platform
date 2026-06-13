@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Backfill Script — NYC 311 Service Requests (SRC-NYC-001)
+Backfill Script — NYC 311 Service Requests (SRC-NYC-311)
 
 One-time script to backfill the last 3 months of 311 data to GCS Bronze layer.
 
 Storage layout (flat per month, no month= subdirectory):
-  bronze/raw/SRC-NYC-001/nyc_311/data_YYYY-MM.json
-  bronze/raw/SRC-NYC-001/nyc_311/manifest_YYYY-MM.json
+  bronze/raw/SRC-NYC-311/nyc_311/data_YYYY-MM.json
+  bronze/raw/SRC-NYC-311/nyc_311/manifest_YYYY-MM.json
 
 Re-run is idempotent: overwrites both data and manifest files.
 manifest.fetch_timestamp reflects the time of the latest upload.
@@ -32,6 +32,9 @@ import sys
 from datetime import date, datetime
 from typing import Any
 
+from ingestion.config import load_source_config
+from tests.integration.test_single_month import DATASET_NAME
+
 # Absolute import — project root is added to path below
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -44,13 +47,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_nyc_311")
 
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 RESOURCE_ID = "erm2-nwe9"
 DOMAIN = "data.cityofnewyork.us"
-SOURCE_ID = "SRC-NYC-001"
-DATASET_NAME = "nyc_311"
+SOURCE_ID = "SRC-NYC-311"
+DATASET_NAME = None
 TIMESTAMP_FIELD = "created_date"
 PAGE_SIZE = 1000  # Socrata max
 
@@ -59,7 +61,9 @@ def load_config() -> dict[str, str]:
     """Load required config from environment."""
     errors: list[str] = []
     cfg: dict[str, str] = {}
-
+    config = load_source_config(SOURCE_ID)
+    global DATASET_NAME
+    DATASET_NAME = config.datasets[0].name
     bucket = os.environ.get("GCS_BUCKET_NAME", "").strip()
     if not bucket:
         errors.append("GCS_BUCKET_NAME is required")
@@ -71,7 +75,7 @@ def load_config() -> dict[str, str]:
         cfg["SOCRATA_APP_TOKEN"] = app_token
 
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if not creds:
+    if not creds and os.environ.get("ENV", "") != 'DEV':
         errors.append("GOOGLE_APPLICATION_CREDENTIALS not set")
 
     if errors:
@@ -108,10 +112,10 @@ def monthly_ranges(n_months: int = 3) -> list[tuple[date, date]]:
 
 
 def fetch_month(
-    client: SocrataClient,
-    ts_field: str,
-    month_start: date,
-    month_end: date,
+        client: SocrataClient,
+        ts_field: str,
+        month_start: date,
+        month_end: date,
 ) -> list[dict[str, Any]]:
     """Fetch all records where ts_field falls in [month_start, month_end)."""
     start_dt = datetime.combine(month_start, datetime.min.time())
@@ -121,10 +125,10 @@ def fetch_month(
 
     records: list[dict[str, Any]] = []
     for page in client.fetch_all_paginated(
-        timestamp_field=ts_field,
-        start_dt=start_dt,
-        end_dt=end_dt,
-        page_size=PAGE_SIZE,
+            timestamp_field=ts_field,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            page_size=PAGE_SIZE,
     ):
         records.append(page)
         if len(records) % 5000 == 0:
@@ -134,9 +138,9 @@ def fetch_month(
     return records
 
 
-def main() -> None:
+def main(n_months=12) -> None:
     logger.info("=" * 60)
-    logger.info("NYC 311 Backfill  SRC-NYC-001  (last 3 months)")
+    logger.info("NYC 311 Backfill  SRC-NYC-311  (last 3 months)")
     logger.info("=" * 60)
 
     cfg = load_config()
@@ -153,7 +157,7 @@ def main() -> None:
     )
 
     total = 0
-    for month_start, month_end in monthly_ranges(n_months=3):
+    for month_start, month_end in monthly_ranges(n_months=n_months):
         month_str = month_start.strftime("%Y-%m")
         logger.info("─── Month: %s ───", month_str)
 
@@ -188,4 +192,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(1)
