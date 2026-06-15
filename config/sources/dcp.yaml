@@ -5,6 +5,7 @@ source:
   owner: gis_team
   priority: P2
   status: production
+  partition_strategy: static
   description: NYC 行政区划边界（GeoJSON，静态文件）
 
 datasets:

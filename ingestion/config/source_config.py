@@ -35,6 +35,18 @@ class ApiType(StrEnum):
 # Stable set of allowed values for source.status.
 SourceStatus = Literal["production", "staging", "deprecated"]
 
+# Bronze layer partitioning strategy — drives the GCS path layout.
+# daily:   data is split by record date into per-day files inside a month folder.
+#          Used for high-volume event streams (NYC 311, Open-Meteo weather).
+#          Path: bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json + manifest.json
+# monthly: data is written as a single file per month.
+#          Used for lower-volume event streams (NYPD).
+#          Path: bronze/raw/{sid}/{ds}/data_{YYYY-MM}.json + manifest_{YYYY-MM}.json
+# static:  data is written to a fixed-name shard; time is irrelevant.
+#          Used for reference data (DCP borough boundaries).
+#          Path: bronze/raw/{sid}/{ds}/data_static.json + manifest_static.json
+PartitionStrategy = Literal["daily", "monthly", "static"]
+
 
 class SourceMetadata(BaseModel):
     """Top-level metadata for a single data source."""
@@ -43,7 +55,11 @@ class SourceMetadata(BaseModel):
 
     id: str = Field(
         pattern=r"^SRC-[A-Za-z0-9-]+$",
-        description="Stable source identifier, e.g. SRC-NYC-001, SRC-Open-Meteo",
+        description=(
+            "Stable source identifier. The canonical IDs in this project "
+            "are defined in config/sources/*.yaml — load them via "
+            "ingestion.config.load_all_sources() rather than hardcoding."
+        ),
     )
     name: str = Field(min_length=1)
     type: SourceType
@@ -51,6 +67,16 @@ class SourceMetadata(BaseModel):
     priority: str = Field(pattern=r"^P[0-3]$")
     status: SourceStatus
     description: str | None = None
+    partition_strategy: PartitionStrategy = Field(
+        default="monthly",
+        description=(
+            "Bronze partitioning strategy. 'daily' splits records by their "
+            "timestamp_field into per-day files inside a month folder (used for "
+            "high-volume event streams). 'monthly' writes a single file per month. "
+            "'static' writes a fixed-name shard (used for reference data with no "
+            "time dimension). Requires timestamp_field on every dataset when set to 'daily'."
+        ),
+    )
 
 
 class DatasetConfig(BaseModel):
@@ -128,3 +154,26 @@ class SourceConfig(BaseModel):
 
     source: SourceMetadata
     datasets: list[DatasetConfig] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_partition_strategy_vs_timestamps(self) -> SourceConfig:
+        """daily partition requires every dataset to declare a timestamp_field;
+        static partition should have timestamp_field=None (time is ignored)."""
+        if self.source.partition_strategy == "daily":
+            missing = [d.name for d in self.datasets if not d.timestamp_field]
+            if missing:
+                raise ValueError(
+                    f"source {self.source.id!r} has partition_strategy='daily' "
+                    f"but dataset(s) {missing!r} are missing timestamp_field; "
+                    f"daily partitioning splits records by their timestamp_field "
+                    f"and cannot work without one",
+                )
+        elif self.source.partition_strategy == "static":
+            present = [d.name for d in self.datasets if d.timestamp_field]
+            if present:
+                raise ValueError(
+                    f"source {self.source.id!r} has partition_strategy='static' "
+                    f"but dataset(s) {present!r} declare timestamp_field; "
+                    f"static sources ignore time and should have timestamp_field=null",
+                )
+        return self

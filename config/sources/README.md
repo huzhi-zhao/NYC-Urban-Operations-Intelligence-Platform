@@ -31,6 +31,7 @@ source:
   owner: <team-slug>         # required
   priority: P0               # required, regex: ^P[0-3]$
   status: production         # required, one of: production | staging | deprecated
+  partition_strategy: daily  # optional, default: monthly. See Partition strategies below.
   description: <text>        # optional
 
 datasets:
@@ -38,6 +39,7 @@ datasets:
     description: <text>      # optional
     api_type: <ApiType>      # required, see enum below
     timestamp_field: <name>  # required for incremental; null for static
+                             # REQUIRED for every dataset when partition_strategy=daily
 
     # --- socrata / socrata_geojson ---
     resource_id: erm2-nwe9   # required for api_type ∈ {socrata, socrata_geojson}
@@ -58,7 +60,22 @@ datasets:
 | Field | Allowed values |
 |---|---|
 | `source.type` | `rest_api_socrata` · `rest_api` · `geojson_static` |
+| `source.partition_strategy` | `daily` · `monthly` (default: `monthly`) |
 | `datasets[].api_type` | `socrata` · `socrata_geojson` · `open_meteo` · `generic_rest` |
+
+### Partition strategies
+
+The Bronze layer uses two GCS path layouts, chosen per source:
+
+| Strategy | Path layout | Used by |
+|---|---|---|
+| `daily` | `bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/data_{YYYY-MM-DD}.json` + `manifest.json` | NYC 311, Open-Meteo |
+| `monthly` | `bronze/raw/{source_id}/{dataset_name}/data_{YYYY-MM}.json` + `manifest_{YYYY-MM}.json` | NYPD, DCP |
+
+When `partition_strategy: daily`, every dataset **must** declare a
+`timestamp_field` — the loader uses it to split records into per-day files.
+Monthly sources may also have `timestamp_field` (used for the fetch window)
+but the loader does not split by it on write.
 
 ### Cross-field validation
 

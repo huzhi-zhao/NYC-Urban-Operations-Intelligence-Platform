@@ -75,6 +75,23 @@ DEPLOYMENT_PHASE=2   # MinIO + Iceberg + Trino + Docker Airflow
 When generating new loader or DDL code, ask (or check `.env`) which phase is active.
 Generate both variants only if explicitly requested.
 
+## Bronze partitioning strategies
+
+Each source declares `partition_strategy: daily|monthly` in its YAML. The
+`BackfillFacade` dispatches on it:
+
+- `daily` (SRC-NYC-311, SRC-Open-Meteo): records are split by
+  `timestamp_field` into per-day files inside a month folder
+  (`bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json` +
+  `manifest.json`). Requires `timestamp_field` on every dataset.
+- `monthly` (SRC-NYPD, SRC-DCP, default): single file per month
+  (`bronze/raw/{sid}/{ds}/data_{YYYY-MM}.json` +
+  `manifest_{YYYY-MM}.json`).
+
+When adding a new source, choose the strategy that matches the dataset's
+cardinality and access pattern. High-volume event streams → `daily`;
+static reference data and lower-volume streams → `monthly`.
+
 ---
 
 ## Data contract obligations

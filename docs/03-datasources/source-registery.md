@@ -266,5 +266,6 @@ Text
 
 |日期|变更内容|操作人|
 |---|---|---|
+|2026-06-13|新增 Bronze 分区策略：`SRC-NYC-311` / `SRC-Open-Meteo` 改为按天切分（`bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json`），`SRC-NYPD` / `SRC-DCP` 维持按月分片。字段 `source.partition_strategy` 已加入 YAML schema。|数据平台部|
 |2023-10-26|新增 SRC-Open-Meteo, SRC-DCP 天气与空间维度数据源|数据架构师|
 |2023-10-25|确立项目基线，新增 SRC-NYC-311, SRC-NYPD 核心事件流接入|数据架构师|

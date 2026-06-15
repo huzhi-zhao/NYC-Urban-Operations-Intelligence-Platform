@@ -5,6 +5,7 @@ source:
   owner: police
   priority: P0
   status: production
+  partition_strategy: monthly
   description: 警务数据（交通事故、投诉、枪击事件）
 
 datasets:

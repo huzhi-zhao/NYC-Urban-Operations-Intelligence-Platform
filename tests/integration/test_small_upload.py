@@ -130,7 +130,7 @@ def test_small_upload_overwrites_data_and_manifest(gcs_loader):
     assert manifest_data["month_partition"] == TEST_MONTH
     assert manifest_data["fetch_timestamp"] == manifest2.fetch_timestamp
 
-    print(f"\n✓ Small upload test passed")
+    print("\n✓ Small upload test passed")
     print(f"  Data:     gs://{BUCKET}/{data_path}")
     print(f"  Manifest: gs://{BUCKET}/{manifest_path}")
     print(f"  Records:  {manifest2.record_count}")

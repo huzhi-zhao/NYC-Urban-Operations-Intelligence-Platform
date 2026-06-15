@@ -99,6 +99,25 @@ tests/fixtures/         Sample JSON/GeoJSON for mocking API responses
 - All ETL jobs must be **idempotent**: re-running the same `execution_date`
   produces identical output, no duplicates. Use MERGE or INSERT OVERWRITE PARTITION.
 
+### Bronze partitioning strategies
+
+Each source declares `partition_strategy: daily|monthly` in its YAML
+(`config/sources/<id>.yaml`). The `BackfillFacade` uses it to choose the
+GCS path layout:
+
+| Strategy | Used by | GCS path |
+|---|---|---|
+| `daily` | SRC-NYC-311, SRC-Open-Meteo | `bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json` + `manifest_{YYYY-MM-DD}.json` (per day) |
+| `monthly` (default) | SRC-NYPD | `bronze/raw/{sid}/{ds}/data_{YYYY-MM}.json` + `manifest_{YYYY-MM}.json` |
+| `static` | SRC-DCP | `bronze/raw/{sid}/{ds}/data_static.json` + `manifest_static.json` |
+
+`daily` requires every dataset to declare a `timestamp_field` (Pydantic
+validates this in `ingestion/config/source_config.py`). Records are split
+by the date portion of that field; records with missing/unparseable
+timestamps are dropped. Each daily shard has a paired
+`manifest_YYYY-MM-DD.json` file in the same month folder describing that
+day's data.
+
 ---
 
 ## Airflow conventions

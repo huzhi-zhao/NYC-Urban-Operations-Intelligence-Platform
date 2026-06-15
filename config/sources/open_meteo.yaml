@@ -5,6 +5,7 @@ source:
   owner: weather_team
   priority: P1
   status: production
+  partition_strategy: daily
   description: 开源气象 API，逐小时历史与未来 7 天预报
 
 datasets:

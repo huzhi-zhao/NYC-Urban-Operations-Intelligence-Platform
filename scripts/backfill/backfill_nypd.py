@@ -1,4 +1,4 @@
-"""Per-source backfill: NYC 311 Service Requests (SRC-NYC-311, daily)."""
+"""Per-source backfill: NYPD Public Safety (SRC-NYPD, monthly, 4 datasets)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from scripts.backfill._common import (
 from scripts.backfill._registry import register_backfill
 
 logger = logging.getLogger(__name__)
-SOURCE_ID = "SRC-NYC-311"
+SOURCE_ID = "SRC-NYPD"
 
 
 @register_backfill(SOURCE_ID)
@@ -57,4 +57,4 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    run(parse_args("NYC 311 Service Requests backfill (daily)"))
+    run(parse_args("NYPD Public Safety backfill (monthly, 4 datasets)"))

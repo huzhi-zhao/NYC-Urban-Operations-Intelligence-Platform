@@ -7,9 +7,20 @@ Storage layouts:
   {bucket}/bronze/raw/{source_id}/{dataset_name}/ingest_date=YYYY-MM-DD/data.json
   {bucket}/bronze/raw/{source_id}/{dataset_name}/ingest_date=YYYY-MM-DD/manifest.json
 
+  # Daily split (backfill of high-volume event streams) — records are
+  # grouped by their timestamp_field and one file is written per day,
+  # nested inside a month folder. manifest.json in each month folder
+  # describes the most recent upload.
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/data_YYYY-MM-DD.json
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/manifest.json
+
   # Monthly backfill / shard — flat files, month encoded in filename
   {bucket}/bronze/raw/{source_id}/{dataset_name}/data_YYYY-MM.json
   {bucket}/bronze/raw/{source_id}/{dataset_name}/manifest_YYYY-MM.json
+
+The daily split layout is used by sources with ``partition_strategy: daily``
+in their YAML (currently SRC-NYC-311, SRC-Open-Meteo). The monthly layout
+is used by ``partition_strategy: monthly`` (NYPD, DCP).
 
 Manifest contents:
   - source_id, dataset_name, ingest_date, month_partition
@@ -27,7 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -100,6 +111,38 @@ class GCSBronzeLoader:
         if not dates:
             return None, None
         return min(dates).isoformat(), max(dates).isoformat()
+
+    def _group_by_date(
+        self, records: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Group records by their date in the ``timestamp_field``.
+
+        Records with a missing or unparseable timestamp are dropped. Each
+        group is keyed by ISO date ``YYYY-MM-DD`` and preserves input order
+        within the group.
+
+        Returns:
+            Ordered dict ``{YYYY-MM-DD: [records_for_that_day, ...]}``.
+
+        Raises:
+            ValueError: if ``timestamp_field`` is empty.
+        """
+        if not self.timestamp_field:
+            raise ValueError(
+                "Cannot group by date: timestamp_field is not configured on this loader",
+            )
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for r in records:
+            raw = r.get(self.timestamp_field)
+            if not raw:
+                continue
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            key = dt.date().isoformat()
+            groups.setdefault(key, []).append(r)
+        return groups
 
     def _make_manifest(
         self,
@@ -234,13 +277,107 @@ class GCSBronzeLoader:
 
         return manifest
 
+    # ── Daily split write (per-source partition_strategy=daily) ───────────────
+
+    def write_daily(
+        self,
+        source_id: str,
+        dataset_name: str,
+        records: list[dict[str, Any]],
+    ) -> list[ManifestEntry]:
+        """
+        Write records split by their data date into per-day files.
+
+        Used by sources with ``partition_strategy: daily`` (NYC 311,
+        Open-Meteo). Records are grouped by their date in ``timestamp_field``
+        and each group is written as its own file with a paired manifest:
+
+            bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/data_{YYYY-MM-DD}.json
+            bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/manifest_{YYYY-MM-DD}.json
+
+        Each day has its own manifest describing the data file in the
+        same folder. To enumerate all days in a month, list the
+        ``data_*.json`` objects; each one has a matching ``manifest_*.json``.
+
+        Records with a missing or unparseable timestamp are dropped (they
+        cannot be assigned to a day). If no records remain, the call
+        returns an empty list and writes nothing.
+
+        Idempotent: re-running writes overwrite the per-day data file and
+        the per-day manifest.
+
+        Returns:
+            One :class:`ManifestEntry` per day written, sorted by date.
+        """
+        if not self.timestamp_field:
+            raise ValueError(
+                f"write_daily() requires timestamp_field; loader for "
+                f"{source_id}/{dataset_name} has none configured",
+            )
+        groups = self._group_by_date(records)
+        if not groups:
+            return []
+
+        bucket = self._client.bucket(self.bucket_name)
+        ingest_date = date.today()
+        manifests: list[ManifestEntry] = []
+
+        for day_iso, day_records in sorted(groups.items()):
+            day = date.fromisoformat(day_iso)
+            month_partition = day.strftime("%Y-%m")
+            data_filename = f"data_{day_iso}.json"
+            manifest_filename = f"manifest_{day_iso}.json"
+
+            content = json.dumps(
+                day_records, indent=2, ensure_ascii=False,
+            ).encode("utf-8")
+            manifest = self._make_manifest(
+                source_id=source_id,
+                dataset_name=dataset_name,
+                ingest_date=ingest_date,
+                month_partition=month_partition,
+                filename=data_filename,
+                records=day_records,
+                content_bytes=content,
+            )
+
+            data_path = (
+                f"bronze/raw/{source_id}/{dataset_name}/"
+                f"{month_partition}/{data_filename}"
+            )
+            self._upload(bucket, data_path, content, {
+                "source_id": source_id,
+                "dataset_name": dataset_name,
+                "data_date": day_iso,
+                "month_partition": month_partition,
+                "record_count": str(len(day_records)),
+            })
+
+            manifest_path = (
+                f"bronze/raw/{source_id}/{dataset_name}/"
+                f"{month_partition}/{manifest_filename}"
+            )
+            manifest_bytes = json.dumps(
+                manifest.to_dict(), indent=2,
+            ).encode("utf-8")
+            self._upload(bucket, manifest_path, manifest_bytes, {
+                "source_id": source_id,
+                "dataset_name": dataset_name,
+                "data_date": day_iso,
+                "month_partition": month_partition,
+            })
+
+            manifests.append(manifest)
+
+        return manifests
+
 
 def load_gcs_credentials() -> str:
     """Load GCS credentials path from environment."""
     import os
     cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
     if not cred_path:
-        raise EnvironmentError(
+        raise OSError(
             "GOOGLE_APPLICATION_CREDENTIALS not set. "
             "Set path to GCP service account JSON key file."
         )

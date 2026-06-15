@@ -57,6 +57,7 @@ def test_311_source_metadata():
     assert cfg.source.priority == "P0"
     assert cfg.source.status == "production"
     assert cfg.source.owner == "city_operations"
+    assert cfg.source.partition_strategy == "daily"
 
 
 def test_311_dataset_socrata_fields():
@@ -125,6 +126,7 @@ def test_open_meteo_uses_endpoint_and_query_params():
     assert ds.resource_id is None
     assert ds.domain is None
     assert ds.format is None
+    assert cfg.source.partition_strategy == "daily"
 
 
 def test_dcp_is_static_geojson():
@@ -138,6 +140,86 @@ def test_dcp_is_static_geojson():
     # Static dataset: no incremental timestamp field
     assert ds.timestamp_field is None
     assert ds.endpoint is None
+    assert cfg.source.partition_strategy == "static"
+
+
+def test_nypd_partition_strategy_is_monthly():
+    cfg = load_source_config("SRC-NYPD")
+    assert cfg.source.partition_strategy == "monthly"
+    # All NYPD datasets keep their timestamp_field for the fetch window
+    for d in cfg.datasets:
+        assert d.timestamp_field, f"{d.name} should have a timestamp_field"
+
+
+# ── partition_strategy validation ────────────────────────────────────────────
+
+
+def test_daily_partition_requires_timestamp_field_on_every_dataset(isolated_config_dir):
+    """Setting partition_strategy=daily without a timestamp_field is rejected."""
+    (isolated_config_dir / "daily_missing_ts.yaml").write_text(
+        "source:\n"
+        "  id: SRC-TEST-001\n"
+        "  name: daily-missing-ts\n"
+        "  type: rest_api\n"
+        "  owner: x\n"
+        "  priority: P2\n"
+        "  status: production\n"
+        "  partition_strategy: daily\n"
+        "datasets:\n"
+        "  - name: foo\n"
+        "    api_type: open_meteo\n"
+        "    endpoint: https://x\n"
+        # intentionally no timestamp_field
+    )
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_all_sources()
+    msg = str(exc_info.value)
+    assert "partition_strategy='daily'" in msg or "daily" in msg
+    assert "timestamp_field" in msg
+    assert "foo" in msg
+
+
+def test_invalid_partition_strategy_value_rejected(isolated_config_dir):
+    """Unknown partition_strategy values are rejected by the Literal type."""
+    (isolated_config_dir / "bad_partition.yaml").write_text(
+        "source:\n"
+        "  id: SRC-TEST-001\n"
+        "  name: bad\n"
+        "  type: rest_api\n"
+        "  owner: x\n"
+        "  priority: P2\n"
+        "  status: production\n"
+        "  partition_strategy: hourly\n"
+        "datasets:\n"
+        "  - name: foo\n"
+        "    api_type: open_meteo\n"
+        "    endpoint: https://x\n"
+        "    timestamp_field: t\n"
+    )
+    with pytest.raises(ConfigLoadError) as exc_info:
+        load_all_sources()
+    assert "partition_strategy" in str(exc_info.value)
+
+
+def test_partition_strategy_defaults_to_monthly_when_omitted(isolated_config_dir):
+    """A YAML without partition_strategy falls back to 'monthly'."""
+    (isolated_config_dir / "default.yaml").write_text(
+        "source:\n"
+        "  id: SRC-DEFAULT-001\n"
+        "  name: default\n"
+        "  type: rest_api_socrata\n"
+        "  owner: x\n"
+        "  priority: P2\n"
+        "  status: production\n"
+        "datasets:\n"
+        "  - name: foo\n"
+        "    api_type: socrata\n"
+        "    resource_id: abc\n"
+        "    domain: example.com\n"
+        "    timestamp_field: t\n"
+    )
+    cfg = load_source_config("SRC-DEFAULT-001")
+    assert cfg.source.partition_strategy == "monthly"
 
 
 # ── Error branches: unknown source ───────────────────────────────────────────

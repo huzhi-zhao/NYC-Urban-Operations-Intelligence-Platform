@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import sys
-import os
 from pathlib import Path
 
 # Ensure project root on path for absolute imports

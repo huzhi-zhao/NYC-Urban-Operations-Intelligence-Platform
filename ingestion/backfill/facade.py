@@ -1,0 +1,421 @@
+"""
+BackfillFacade — atomic single-document fetch + write.
+
+The facade exposes **one public method per (strategy × operation) combination**:
+
+    daily   → upload_day(day)  / fetch_day(day)
+    monthly → upload_month(month) / fetch_month(month)
+    static  → upload_static() / fetch_static()
+
+Each method handles **exactly one document** (one day, one calendar month, or
+one static snapshot). Bulk operations (yearly backfills) are the caller's
+responsibility — see ``scripts/backfill/bulk.py`` for orchestration loops.
+
+The strategy-method mapping is enforced: calling ``upload_day()`` on a
+``monthly`` source raises ``ValueError`` immediately, so caller mistakes
+fail fast before any GCS work begins.
+
+Bronze path layout is chosen per source by ``source.partition_strategy``:
+- ``daily``   — high-volume event streams (NYC 311, Open-Meteo). Records are
+                split by ``timestamp_field`` into per-day files inside a
+                month folder:
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json``
+                + a ``manifest.json`` per month folder.
+- ``monthly`` — lower-volume event streams (NYPD). One file per month:
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_{YYYY-MM}.json``
+                + ``manifest_{YYYY-MM}.json``.
+- ``static``  — reference data with no time dimension (DCP borough
+                boundaries). Fixed shard name:
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_static.json``
+                + ``manifest_static.json``.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import date, timedelta
+from typing import Any
+
+from google.cloud import storage
+
+from ingestion.backfill.fetchers import build_fetcher
+from ingestion.config import DatasetConfig, SourceConfig
+from ingestion.loaders.gcs_loader import GCSBronzeLoader, ManifestEntry
+
+logger = logging.getLogger(__name__)
+
+
+class BackfillError(Exception):
+    """Raised by ``BackfillFacade`` on fetch or upload failure.
+
+    Carries the offending source/dataset and the failing phase so structured
+    logs and exit handlers can route the error to the right place.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source_id: str | None = None,
+        dataset_name: str | None = None,
+        phase: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.source_id = source_id
+        self.dataset_name = dataset_name
+        self.phase = phase
+
+    def __str__(self) -> str:
+        prefix = f"[{self.phase}]" if self.phase else "[error]"
+        ctx = []
+        if self.source_id:
+            ctx.append(f"source={self.source_id}")
+        if self.dataset_name:
+            ctx.append(f"dataset={self.dataset_name}")
+        ctx_str = " ".join(ctx)
+        return f"{prefix} {ctx_str} {self.args[0]}" if ctx_str else f"{prefix} {self.args[0]}"
+
+
+class BackfillFacade:
+    """Unified backfill facade — atomic fetch + write per document."""
+
+    def __init__(
+        self,
+        source_config: SourceConfig,
+        gcs_bucket: str,
+        gcs_client: storage.Client | None = None,
+    ) -> None:
+        self.cfg = source_config
+        self.gcs_bucket = gcs_bucket
+        self._gcs_client = gcs_client  # shared across per-dataset loaders
+        # One loader per dataset so each can carry its own timestamp_field
+        # (NYPD has 4 datasets with different timestamp columns).
+        self._loaders: dict[str, GCSBronzeLoader] = {
+            ds.name: self._make_loader(ds) for ds in source_config.datasets
+        }
+
+    # ── Public API: 6 atomic methods (3 strategies × {upload, fetch}) ────────
+
+    def upload_day(
+        self,
+        day: date,
+        dataset_name: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Atomic: fetch + write records for one calendar day.
+
+        Requires ``partition_strategy='daily'``. Raises ``ValueError`` if
+        the source's strategy is anything else.
+        """
+        self._check_strategy("daily")
+        start, end = day, day + timedelta(days=1)
+        return self._upload_window(start, end, dataset_name)
+
+    def fetch_day(
+        self,
+        day: date,
+        dataset_name: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Atomic: fetch records for one calendar day, do not write."""
+        self._check_strategy("daily")
+        start, end = day, day + timedelta(days=1)
+        return self._fetch_window(start, end, dataset_name)
+
+    def upload_window(
+        self,
+        start: date,
+        end: date,
+        dataset_name: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Atomic: fetch + write records for the given ``[start, end)`` window.
+
+        Use this for sources whose upstream API accepts an arbitrary time
+        window in a single call (e.g. **Open-Meteo**, whose ``past_days`` /
+        ``forecast_days`` query params cover up to 92 + 16 days in one
+        request). For Socrata-style APIs that need a per-day query, prefer
+        ``upload_day`` (or ``upload_month``) — those are atomic at day /
+        month granularity, which is what Socrata's incremental pull wants.
+
+        For ``daily`` sources, the records returned are split by
+        ``timestamp_field`` into per-day files (so a 7-day window produces
+        up to 7 ``data_YYYY-MM-DD.json`` files). For ``monthly`` sources,
+        the whole window is written as a single shard at the ``start`` month.
+
+        Raises ``ValueError`` on ``static`` sources — use ``upload_static``
+        for those.
+        """
+        if self.cfg.source.partition_strategy == "static":
+            raise ValueError(
+                "upload_window() does not apply to static sources; "
+                "use upload_static() instead",
+            )
+        return self._upload_window(start, end, dataset_name)
+
+    def fetch_window(
+        self,
+        start: date,
+        end: date,
+        dataset_name: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Atomic: fetch records for ``[start, end)`` from a wide-fetch API.
+
+        Symmetric to :meth:`upload_window` but does not write. Use for
+        Open-Meteo dry-runs.
+        """
+        if self.cfg.source.partition_strategy == "static":
+            raise ValueError(
+                "fetch_window() does not apply to static sources; "
+                "use fetch_static() instead",
+            )
+        return self._fetch_window(start, end, dataset_name)
+
+    def upload_month(
+        self,
+        month: date,
+        dataset_name: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Atomic: fetch + write records for one calendar month.
+
+        ``month`` should be the first day of the target month
+        (``date(YYYY, MM, 1)``). The internal window is
+        ``[month, 1st of next month)``.
+        """
+        self._check_strategy("monthly")
+        self._validate_first_of_month(month)
+        start, end = month, self._next_month(month)
+        return self._upload_window(start, end, dataset_name)
+
+    def fetch_month(
+        self,
+        month: date,
+        dataset_name: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Atomic: fetch records for one calendar month, do not write."""
+        self._check_strategy("monthly")
+        self._validate_first_of_month(month)
+        start, end = month, self._next_month(month)
+        return self._fetch_window(start, end, dataset_name)
+
+    def upload_static(
+        self,
+        dataset_name: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Atomic: fetch + write the current static snapshot.
+
+        Requires ``partition_strategy='static'``. Time is irrelevant; the
+        shard is written to ``data_static.json`` (fixed name) so re-runs
+        overwrite the same file.
+        """
+        self._check_strategy("static")
+        today = date.today()
+        return self._upload_window(
+            today, today + timedelta(days=1), dataset_name,
+            month_partition_override="static",
+        )
+
+    def fetch_static(
+        self,
+        dataset_name: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Atomic: fetch the current static snapshot, do not write."""
+        self._check_strategy("static")
+        today = date.today()
+        return self._fetch_window(today, today + timedelta(days=1), dataset_name)
+
+    # ── Internal: window-based dispatch (called by the 6 atomic methods) ───
+
+    def _upload_window(
+        self,
+        start: date,
+        end: date,
+        dataset_name: str | None,
+        month_partition_override: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Fetch from upstream and write to GCS Bronze for the given window.
+
+        ``month_partition_override`` is used by ``upload_static()`` to
+        force the shard name to ``"static"`` instead of today's month.
+        For all other callers, the override is ``None`` and the shard
+        name comes from ``start``.
+        """
+        datasets = self._resolve_datasets(dataset_name)
+        manifests: list[ManifestEntry] = []
+        failures: list[BaseException] = []
+
+        for ds in datasets:
+            try:
+                records = self._fetch_one(ds, start, end)
+            except BackfillError as e:
+                logger.error(
+                    "Fetch failed for %s/%s: %s", self.cfg.source.id, ds.name, e,
+                )
+                failures.append(e)
+                continue
+
+            if not records:
+                logger.warning(
+                    "No records for %s/%s in [%s, %s) — skipping",
+                    self.cfg.source.id, ds.name, start, end,
+                )
+                continue
+
+            try:
+                written = self._write_one(
+                    ds, records, start,
+                    month_partition_override=month_partition_override,
+                )
+            except Exception as e:
+                logger.error(
+                    "Write failed for %s/%s: %s", self.cfg.source.id, ds.name, e,
+                )
+                failures.append(
+                    BackfillError(
+                        f"upload failed: {e}",
+                        source_id=self.cfg.source.id,
+                        dataset_name=ds.name,
+                        phase="upload",
+                    ),
+                )
+                continue
+
+            manifests.extend(written)
+            for m in written:
+                logger.info(
+                    "Wrote %d records -> gs://%s/bronze/raw/%s/%s/%s",
+                    m.record_count, self.gcs_bucket, self.cfg.source.id,
+                    ds.name, m.filename,
+                )
+
+        if manifests:
+            return manifests
+        if failures:
+            raise BackfillError(
+                f"All {len(failures)} dataset(s) failed for {self.cfg.source.id!r}",
+                source_id=self.cfg.source.id,
+                phase="upload",
+            ) from failures[0]
+        # No manifests and no failures — every dataset returned zero records.
+        return []
+
+    def _fetch_window(
+        self,
+        start: date,
+        end: date,
+        dataset_name: str | None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Fetch from upstream for the given window without writing."""
+        datasets = self._resolve_datasets(dataset_name)
+        out: dict[str, list[dict[str, Any]]] = {}
+        failures: list[BaseException] = []
+
+        for ds in datasets:
+            try:
+                records = self._fetch_one(ds, start, end)
+            except BackfillError as e:
+                logger.error("Fetch failed for %s/%s: %s", self.cfg.source.id, ds.name, e)
+                failures.append(e)
+                continue
+            out[ds.name] = records
+            logger.info(
+                "Fetched %d records for %s/%s in [%s, %s)",
+                len(records), self.cfg.source.id, ds.name, start, end,
+            )
+
+        if out:
+            return out
+        if failures:
+            raise BackfillError(
+                f"All {len(failures)} dataset(s) failed to fetch for {self.cfg.source.id!r}",
+                source_id=self.cfg.source.id,
+                phase="fetch",
+            ) from failures[0]
+        return {}
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _check_strategy(self, expected: str) -> None:
+        """Raise ValueError if the source's strategy doesn't match `expected`."""
+        actual = self.cfg.source.partition_strategy
+        if actual != expected:
+            raise ValueError(
+                f"this method requires partition_strategy='{expected}', "
+                f"but source {self.cfg.source.id!r} has partition_strategy='{actual}'",
+            )
+
+    def _validate_first_of_month(self, month: date) -> None:
+        if month.day != 1:
+            raise ValueError(
+                f"month must be the first day of a month (got {month}); "
+                f"callers should pass date(YYYY, MM, 1)",
+            )
+
+    def _next_month(self, month: date) -> date:
+        """Return the 1st of the month after `month`."""
+        if month.month == 12:
+            return date(month.year + 1, 1, 1)
+        return date(month.year, month.month + 1, 1)
+
+    def _resolve_datasets(self, dataset_name: str | None) -> list[DatasetConfig]:
+        if dataset_name is None:
+            return list(self.cfg.datasets)
+        for d in self.cfg.datasets:
+            if d.name == dataset_name:
+                return [d]
+        valid = [d.name for d in self.cfg.datasets]
+        raise ValueError(
+            f"Dataset {dataset_name!r} not in source {self.cfg.source.id!r}. "
+            f"Available: {valid}",
+        )
+
+    def _make_loader(self, ds: DatasetConfig) -> GCSBronzeLoader:
+        return GCSBronzeLoader(
+            bucket_name=self.gcs_bucket,
+            timestamp_field=ds.timestamp_field or "",
+            client=self._gcs_client,
+        )
+
+    def _fetch_one(
+        self,
+        ds: DatasetConfig,
+        start: date,
+        end: date,
+    ) -> list[dict[str, Any]]:
+        fetcher = build_fetcher(ds, start=start, end=end)
+        try:
+            return list(fetcher.fetch())
+        except BackfillError:
+            raise
+        except Exception as e:
+            raise BackfillError(
+                f"fetch failed: {e}",
+                source_id=self.cfg.source.id,
+                dataset_name=ds.name,
+                phase="fetch",
+            ) from e
+
+    def _write_one(
+        self,
+        ds: DatasetConfig,
+        records: list[dict[str, Any]],
+        start: date,
+        month_partition_override: str | None = None,
+    ) -> list[ManifestEntry]:
+        """Dispatch to the write method matching the source's partition strategy.
+
+        ``month_partition_override`` (used for static) replaces the
+        default `start.strftime("%Y-%m")` for the monthly shard path.
+        """
+        loader = self._loaders[ds.name]
+        if self.cfg.source.partition_strategy == "daily":
+            return loader.write_daily(
+                source_id=self.cfg.source.id,
+                dataset_name=ds.name,
+                records=records,
+            )
+        # Default: monthly shard.
+        month_partition = month_partition_override or start.strftime("%Y-%m")
+        return [loader.write_monthly_shard(
+            source_id=self.cfg.source.id,
+            dataset_name=ds.name,
+            month_partition=month_partition,
+            records=records,
+        )]

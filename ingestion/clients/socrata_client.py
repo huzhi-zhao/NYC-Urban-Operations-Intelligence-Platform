@@ -13,8 +13,9 @@ Used by: SRC-NYC-311 (311), SRC-NYPD (NYPD Collisions)
 from __future__ import annotations
 
 import time
+from collections.abc import Generator
 from datetime import datetime
-from typing import Any, Generator
+from typing import Any
 
 import requests
 
