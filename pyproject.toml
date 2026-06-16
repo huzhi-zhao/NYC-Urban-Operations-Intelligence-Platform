@@ -37,6 +37,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "apache-airflow-stubs",
     "pytest>=9.0.3",
 ]
 

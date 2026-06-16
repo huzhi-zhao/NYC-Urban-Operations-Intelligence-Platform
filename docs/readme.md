@@ -96,11 +96,3 @@ docs/
     └── context-snapshots/           # ★ 阶段性上下文快照（长项目保持 AI 认知连续性）
         └── 2026-Q2-sprint-context.md
 ```
-
-
-## DOCKER Deployment
-```shell
-docker compose run --rm airflow-init
-docker compose up -d airflow-webserver airflow-scheduler
-
-```
