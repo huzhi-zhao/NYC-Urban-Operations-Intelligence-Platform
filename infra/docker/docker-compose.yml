@@ -47,9 +47,7 @@ services:
       bash -c "
         pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage &&
         airflow db migrate &&
-        airflow users create --username admin --password admin
-          --firstname NYC --lastname UOIP
-          --role Admin --email admin@nyc-uoip.local
+        airflow users create --username admin --password admin --firstname NYC --lastname UOIP --role Admin --email admin@nyc-uoip.local
       "
     restart: "no"
 
