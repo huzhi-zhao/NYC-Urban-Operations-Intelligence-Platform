@@ -9,3 +9,7 @@ service_account_name = "nyc-uoip-sa"
 # Resources
 gcs_bucket_name   = "nyc-uoip"
 bigquery_dataset  = "nyc_uoip"
+
+# Cloud Composer 2
+composer_env_name = "nyc-uoip-composer"
+socrata_app_token = ""   # fill in, never commit

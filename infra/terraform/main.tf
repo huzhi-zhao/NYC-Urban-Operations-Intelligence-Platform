@@ -1,3 +1,60 @@
+# ── GCP APIs ─────────────────────────────────────────────────────────────────
+
+resource "google_project_service" "composer" {
+  project                    = var.project_id
+  service                    = "composer.googleapis.com"
+  disable_on_destroy         = false
+}
+
+resource "google_project_service" "secretmanager" {
+  project            = var.project_id
+  service            = "secretmanager.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "cloudbuild" {
+  project            = var.project_id
+  service            = "cloudbuild.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "container" {
+  project            = var.project_id
+  service            = "container.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "iamcredentials" {
+  project            = var.project_id
+  service            = "iamcredentials.googleapis.com"
+  disable_on_destroy = false
+}
+
+# ── Composer v2 Service Agent permission ─────────────────────────────────────
+# Composer 2 requires its GCP-managed Service Agent to have this role.
+# The agent SA is auto-created by GCP; we only grant it the required role.
+
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+resource "google_project_iam_member" "cloudservices_editor" {
+  project    = var.project_id
+  role       = "roles/editor"
+  member     = "serviceAccount:${data.google_project.project.number}@cloudservices.gserviceaccount.com"
+  depends_on = [google_project_service.composer]
+}
+
+resource "google_project_iam_member" "composer_agent_v2_ext" {
+  project    = var.project_id
+  role       = "roles/composer.ServiceAgentV2Ext"
+  member     = "serviceAccount:service-${data.google_project.project.number}@cloudcomposer-accounts.iam.gserviceaccount.com"
+  depends_on = [
+    google_project_service.composer,
+    google_project_service.iamcredentials,
+  ]
+}
+
 # ── Service Account ──────────────────────────────────────────────────────────
 
 resource "google_service_account" "main" {
@@ -46,7 +103,7 @@ resource "google_project_iam_member" "dataproc_editor" {
 
 resource "google_storage_bucket" "bronze" {
   name          = var.gcs_bucket_name
-  location      = var.region
+  location      = var.storage_location
   storage_class = "STANDARD"
 
   labels = {
@@ -57,14 +114,20 @@ resource "google_storage_bucket" "bronze" {
 
   uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
+  force_destroy               = true
 
   versioning {
     enabled = true
   }
 
   lifecycle_rule {
-    action { type = "SetStorageClass"  storage_class = "COLDLINE" }
-    condition { age = 90 }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "COLDLINE"
+    }
+    condition {
+      age = 90
+    }
   #   condition {
   #     age = 90  # Archive after 90 days, 90后GCP不免费了
   #   }
@@ -74,13 +137,87 @@ resource "google_storage_bucket" "bronze" {
   }
 }
 
+# ── Cloud Composer 2 ──────────────────────────────────────────────────────────
+# COST WARNING: Composer 2 Small ≈ $10/day. Delete after backfill completes.
+#   terraform destroy -target=google_composer_environment.main
+
+resource "google_project_iam_member" "composer_worker" {
+  project = var.project_id
+  role    = "roles/composer.worker"
+  member  = "serviceAccount:${google_service_account.main.email}"
+}
+
+resource "google_composer_environment" "main" {
+  name    = var.composer_env_name
+  region  = var.region
+  depends_on = [
+    google_project_service.composer,
+    google_project_service.cloudbuild,
+    google_project_service.container,
+    google_project_service.iamcredentials,
+    google_project_iam_member.composer_agent_v2_ext,
+    google_project_iam_member.cloudservices_editor,
+    google_project_iam_member.composer_worker,
+  ]
+
+  config {
+    software_config {
+      # Composer 2 + Airflow 2.9 — Python 3.11 built-in
+      image_version = "composer-2-airflow-2"
+
+      env_variables = {
+        GCS_BUCKET_NAME  = var.gcs_bucket_name
+        DEPLOYMENT_PHASE = "1"
+      }
+
+      # Third-party deps our ingestion/ package needs (stdlib + google-cloud-storage already included)
+      pypi_packages = {
+        "pydantic"      = ">=2.0"
+        "pyyaml"        = ""
+        "requests"      = ">=2.31.0"
+        "python-dotenv" = ""
+      }
+      # SOCRATA_APP_TOKEN is set post-apply via gcloud (see Makefile: make set-composer-secret).
+      # Terraform does not manage secret values — they never touch terraform state.
+    }
+
+    workloads_config {
+      scheduler {
+        cpu        = 0.5
+        memory_gb  = 1.875
+        storage_gb = 1
+        count      = 1
+      }
+      web_server {
+        cpu        = 0.5
+        memory_gb  = 1.875
+        storage_gb = 1
+      }
+      worker {
+        cpu        = 0.5
+        memory_gb  = 1.875
+        storage_gb = 1
+        min_count  = 1
+        max_count  = 2
+      }
+    }
+
+    environment_size = "ENVIRONMENT_SIZE_SMALL"
+
+    node_config {
+      service_account = google_service_account.main.email
+      zone            = "us-east1-d"
+    }
+  }
+}
+
 # ── BigQuery Dataset ──────────────────────────────────────────────────────────
 
 resource "google_bigquery_dataset" "main" {
   dataset_id    = var.bigquery_dataset
   friendly_name  = "NYC UOIP Data Warehouse"
   description    = "NYC Urban Operations Intelligence Platform - Gold Layer"
-  location       = var.region
+  location       = var.storage_location
   default_table_expiration_ms = null  # No expiration
 
   labels = {

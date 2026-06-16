@@ -1,7 +1,7 @@
 # NYC-UOIP — Claude Code Instructions
 
 > This file is read by Claude Code at the start of every session.
-> Keep it under 200 lines. Move long procedures to `.claude/rules/`.
+> Keep it under 1000 lines. Move long procedures to `.claude/rules/`.
 
 @AGENTS.md
 
@@ -18,6 +18,7 @@ Two delivery phases run in the same repo:
 - **Phase 1** — GCP stack: GCS · Dataproc · BigQuery · Cloud Composer
 - **Phase 2** — Self-hosted stack: MinIO · Spark+Iceberg · Trino · Airflow (Docker)
 
+currently, we are at phase 1 only.
 ---
 
 ## Build & run commands
@@ -51,9 +52,12 @@ docker compose -f infra/docker/docker-compose.yml up -d
 
 ```
 dags/                   Airflow DAG definitions — scheduling logic only
+doc/                    #开发者和人类友好的 各种文档，内置文档目录架构
+config                  #各种配置
 ingestion/clients/      Thin API wrappers (Socrata, Open-Meteo, GeoJSON)
 ingestion/loaders/      Write raw files to Bronze (gcs_loader / minio_loader)
 ingestion/schemas/      Pydantic models — validate raw API shape before write
+scripts/backfill/       # 数据回填脚本
 spark/jobs/             PySpark entry points, one file per dataset
 spark/transforms/       Reusable transform functions imported by jobs
 spark/schemas/          Silver layer StructType definitions
@@ -89,7 +93,7 @@ tests/fixtures/         Sample JSON/GeoJSON for mocking API responses
 ## Data architecture rules
 
 - Bronze = immutable raw JSON/GeoJSON. Never overwrite a Bronze file.
-  Partition path: `bronze/<dataset>/year=YYYY/month=MM/day=DD/`
+  Partition path: `bronze/raw/<sourceId>/<dataset>/[month]/data-<date>.json/csv`
 - Silver = cleaned Parquet, partitioned by date.
   All timestamps must be UTC. Use `timestamp_normalizer.py` for all conversions.
 - Gold = BigQuery managed tables (Phase 1) or Iceberg tables via Trino (Phase 2).
@@ -148,3 +152,16 @@ day's data.
 - A Spark job produces a Silver partition with 0 rows (possible API outage).
 - Any `dim_geography` spatial join returns NULL for > 10% of records.
 - GCP billing alert fires.
+
+---
+
+## Implementation status (updated 2026-06-15)
+
+- **Bronze ingestion** — fully implemented and tested.
+  `scripts/backfill/` + `ingestion/backfill.py` are the entry points.
+  See `.claude/rules/backfill.md` for the 3-layer architecture and dispatch tables.
+- **`dags/` directory** — does not exist yet. Next milestone: 4 backfill DAGs
+  (one per source, `schedule=None`, Params-driven). See `.claude/rules/backfill.md`.
+- **Silver / Gold / Spark** — not yet implemented.
+
+@.claude/rules/backfill.md

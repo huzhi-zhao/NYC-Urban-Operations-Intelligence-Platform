@@ -6,7 +6,7 @@ variable "project_id" {
 variable "region" {
   description = "GCP Region for resources"
   type        = string
-  default     = "us-central1"
+  default     = "us-east1"
 }
 
 variable "environment" {
@@ -30,4 +30,16 @@ variable "bigquery_dataset" {
   description = "Name of the BigQuery dataset"
   type        = string
   default     = "nyc_uoip"
+}
+
+variable "composer_env_name" {
+  description = "Cloud Composer 2 environment name"
+  type        = string
+  default     = "nyc-uoip-composer"
+}
+
+variable "storage_location" {
+  description = "Location for GCS bucket and BigQuery dataset (independent of composer region)"
+  type        = string
+  default     = "us-central1"
 }
