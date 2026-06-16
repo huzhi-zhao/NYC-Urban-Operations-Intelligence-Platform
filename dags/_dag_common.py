@@ -40,7 +40,7 @@ backfill_params = {
     ),
     "bucket": Param(
         "",
-        type="string",
+        type=["string", "null"],
         description="GCS bucket name. Empty = use GCS_BUCKET_NAME env var.",
     ),
 }
