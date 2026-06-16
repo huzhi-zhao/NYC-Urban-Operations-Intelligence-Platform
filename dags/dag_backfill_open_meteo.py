@@ -6,11 +6,14 @@ Partition strategy : daily, wide-fetch (1 Open-Meteo API call covers the entire 
 Trigger            : manual only (schedule=None)
 Params             : start (inclusive), end (exclusive), bucket
 
-Open-Meteo API constraint: past_days ≤ 92 (free tier). Large windows are
-automatically split into ≤92-day chunks and executed sequentially.
+Routing:
+- Windows starting within the last 92 days → forecast API (past_days / forecast_days).
+- Older windows → archive API (start_date / end_date, no day-count limit).
+  Historical chunks are sized at 365 days to reduce API call count.
+  Recent chunks are sized at 90 days (safely under the 92-day forecast limit).
 
 Trigger example:
-    {"start": "2024-01-01", "end": "2026-06-16", "bucket": "nyc-uoip-prod"}
+    {"start": "2020-01-01", "end": "2026-06-01", "bucket": "nyc-uoip-prod"}
 """
 
 from __future__ import annotations
@@ -26,25 +29,48 @@ from _dag_common import DEFAULT_ARGS, backfill_params, get_bucket
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "SRC-Open-Meteo"
-_CHUNK_DAYS = 90  # safely under the 92-day API limit
+_ARCHIVE_CHUNK_DAYS = 365   # archive API: no day-count limit, use large chunks
+_FORECAST_CHUNK_DAYS = 90   # forecast API: must stay under 92-day past_days limit
+_ARCHIVE_CUTOFF_DAYS = 92   # windows starting > 92 days ago route to archive API
 
 
 def _check_params(**context) -> None:
+    from datetime import date as _date
+
     params = context["params"]
     start = datetime.strptime(params["start"], "%Y-%m-%d").date()
     end = datetime.strptime(params["end"], "%Y-%m-%d").date()
     if end <= start:
         raise ValueError(f"end ({end}) must be after start ({start})")
     get_bucket(params)
-    window_days = (end - start).days
-    chunks = (window_days + _CHUNK_DAYS - 1) // _CHUNK_DAYS
+
+    today = _date.today()
+    archive_boundary = today - timedelta(days=_ARCHIVE_CUTOFF_DAYS)
+    archive_end = min(end, archive_boundary)
+    forecast_start = max(start, archive_boundary)
+
+    archive_chunks = 0
+    if start < archive_boundary:
+        archive_days = (archive_end - start).days
+        archive_chunks = (archive_days + _ARCHIVE_CHUNK_DAYS - 1) // _ARCHIVE_CHUNK_DAYS
+
+    forecast_chunks = 0
+    if end > archive_boundary:
+        forecast_days = (end - forecast_start).days
+        forecast_chunks = (forecast_days + _FORECAST_CHUNK_DAYS - 1) // _FORECAST_CHUNK_DAYS
+
     logger.info(
-        "%s backfill: [%s, %s) = %d days, will run %d chunk(s) of ≤%d days",
-        SOURCE_ID, start, end, window_days, chunks, _CHUNK_DAYS,
+        "%s backfill: [%s, %s), archive_boundary=%s, "
+        "archive_chunks=%d (≤%d days each), forecast_chunks=%d (≤%d days each)",
+        SOURCE_ID, start, end, archive_boundary,
+        archive_chunks, _ARCHIVE_CHUNK_DAYS,
+        forecast_chunks, _FORECAST_CHUNK_DAYS,
     )
 
 
 def _run_backfill(**context) -> None:
+    from datetime import date as _date
+
     from scripts.backfill.bulk import backfill_daily_window
 
     params = context["params"]
@@ -52,12 +78,18 @@ def _run_backfill(**context) -> None:
     end = datetime.strptime(params["end"], "%Y-%m-%d").date()
     bucket = get_bucket(params)
 
-    # Split large windows into ≤90-day chunks (Open-Meteo past_days ≤ 92).
+    today = _date.today()
+    # Boundary: windows starting before this date route to the archive API
+    # (handled automatically by OpenMeteoFetcher); use larger chunks there.
+    archive_boundary = today - timedelta(days=_ARCHIVE_CUTOFF_DAYS)
+
     cursor = start
     all_results = []
     while cursor < end:
-        chunk_end = min(cursor + timedelta(days=_CHUNK_DAYS), end)
-        logger.info("Fetching chunk [%s, %s)", cursor, chunk_end)
+        # Choose chunk size based on which API the fetcher will use.
+        chunk_days = _ARCHIVE_CHUNK_DAYS if cursor < archive_boundary else _FORECAST_CHUNK_DAYS
+        chunk_end = min(cursor + timedelta(days=chunk_days), end)
+        logger.info("Fetching chunk [%s, %s) (chunk_days=%d)", cursor, chunk_end, chunk_days)
         results = backfill_daily_window(SOURCE_ID, start=cursor, end=chunk_end, bucket=bucket)
         all_results.extend(results)
         cursor = chunk_end

@@ -1,4 +1,12 @@
-"""Open-Meteo fetcher — converts start/end to past_days/forecast_days."""
+"""Open-Meteo fetcher — routes to forecast or archive API based on window age.
+
+Two Open-Meteo APIs are used:
+- Forecast API  (api.open-meteo.com/v1/forecast):  past_days ≤ 92 + forecast_days ≤ 16.
+  Used only for recent/future windows that fall within those limits.
+- Archive API   (archive-api.open-meteo.com/v1/archive): start_date / end_date params.
+  Used for any window that starts more than MAX_PAST_DAYS days ago.
+  Supports arbitrary historical dates (back to 1940-01-01).
+"""
 
 from __future__ import annotations
 
@@ -14,9 +22,14 @@ from ingestion.config import DatasetConfig
 
 logger = logging.getLogger(__name__)
 
-# Open-Meteo limits as of 2026-06-13 — see https://open-meteo.com/en/docs
+# Open-Meteo forecast API limits (free tier)
 MAX_PAST_DAYS = 92
 MAX_FORECAST_DAYS = 16
+
+ARCHIVE_BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+# Query params that are not valid on the archive API
+_FORECAST_ONLY_PARAMS = {"past_days", "forecast_days"}
 
 
 def _window_to_past_forecast(
@@ -26,25 +39,32 @@ def _window_to_past_forecast(
 ) -> tuple[int, int]:
     """Translate a ``[start, end)`` window to ``(past_days, forecast_days)``.
 
-    - If the window is entirely in the past, ``forecast_days = 0``.
-    - If entirely in the future, ``past_days = 0``.
-    - If it straddles today, both are > 0.
+    Both values are relative to *today*:
+    - ``past_days``     = how many days before today the window starts.
+    - ``forecast_days`` = how many days after today the window ends.
+
+    If the window is entirely in the past, ``forecast_days = 0``.
+    If entirely in the future, ``past_days = 0``.
+    If it straddles today, both are > 0.
     """
-    if end <= today:
-        past = (end - start).days
-        return past, 0
-    if start >= today:
-        forecast = (end - start).days
-        return 0, forecast
-    return (today - start).days, (end - today).days
+    past = max((today - start).days, 0)
+    forecast = max((end - today).days, 0)
+    return past, forecast
+
+
+def _uses_archive(start: date, today: date) -> bool:
+    """True when the window starts before the forecast API's past_days limit."""
+    return (today - start).days > MAX_PAST_DAYS
 
 
 class OpenMeteoFetcher(Fetcher):
     """Fetch Open-Meteo data for the ``[start, end)`` window.
 
-    Open-Meteo's API takes ``past_days`` and ``forecast_days`` query params
-    (not arbitrary start/end). This fetcher translates the caller's
-    ``[start, end)`` window into those two values, relative to today.
+    Routing logic:
+    - Window starts within the last MAX_PAST_DAYS days  → forecast API
+      (uses past_days / forecast_days query params).
+    - Window starts further back (historical backfill)   → archive API
+      (uses start_date / end_date query params, no day-count limit).
     """
 
     def __init__(self, ds: DatasetConfig, start: date, end: date) -> None:
@@ -52,22 +72,56 @@ class OpenMeteoFetcher(Fetcher):
             raise ValueError(
                 f"Open-Meteo dataset {ds.name!r} missing endpoint",
             )
-        self.endpoint = ds.endpoint
+        self.forecast_endpoint = ds.endpoint
         self.query_params = dict(ds.query_params or {})
         self.start = start
         self.end = end
         self.dataset_name = ds.name
 
     def fetch(self) -> Iterator[dict[str, Any]]:
-        from datetime import date as _date
+        today = date.today()
 
-        past_days, forecast_days = _window_to_past_forecast(
-            self.start, self.end, today=_date.today(),
+        if _uses_archive(self.start, today):
+            yield from self._fetch_archive()
+        else:
+            yield from self._fetch_forecast(today)
+
+    # ── Archive path ──────────────────────────────────────────────────────────
+
+    def _fetch_archive(self) -> Iterator[dict[str, Any]]:
+        """Use archive API with start_date / end_date (arbitrary history)."""
+        # end is exclusive; archive API's end_date is inclusive → subtract 1 day
+        from datetime import timedelta
+        end_inclusive = self.end - timedelta(days=1)
+
+        # Strip forecast-only params that the archive endpoint does not accept
+        params = {k: v for k, v in self.query_params.items() if k not in _FORECAST_ONLY_PARAMS}
+        params["start_date"] = self.start.isoformat()
+        params["end_date"] = end_inclusive.isoformat()
+
+        logger.info(
+            "Open-Meteo ARCHIVE fetch: dataset=%s window=[%s, %s) "
+            "-> start_date=%s end_date=%s",
+            self.dataset_name, self.start, self.end,
+            params["start_date"], params["end_date"],
         )
+
+        resp = requests.get(ARCHIVE_BASE_URL, params=params, timeout=120)
+        resp.raise_for_status()
+        yield from self._flatten_hourly(resp.json())
+
+    # ── Forecast path ─────────────────────────────────────────────────────────
+
+    def _fetch_forecast(self, today: date) -> Iterator[dict[str, Any]]:
+        """Use forecast API with past_days / forecast_days (recent windows)."""
+        past_days, forecast_days = _window_to_past_forecast(self.start, self.end, today)
+
         if past_days > MAX_PAST_DAYS:
             raise ValueError(
                 f"Window starts {past_days} days before today; "
-                f"Open-Meteo allows at most {MAX_PAST_DAYS} past_days",
+                f"Open-Meteo forecast API allows at most {MAX_PAST_DAYS} past_days. "
+                f"Use a window within the last {MAX_PAST_DAYS} days, or let the "
+                f"fetcher route to the archive API automatically.",
             )
         if forecast_days > MAX_FORECAST_DAYS:
             raise ValueError(
@@ -80,17 +134,20 @@ class OpenMeteoFetcher(Fetcher):
         params["forecast_days"] = forecast_days
 
         logger.info(
-            "Open-Meteo fetch: dataset=%s window=[%s, %s) "
+            "Open-Meteo FORECAST fetch: dataset=%s window=[%s, %s) "
             "-> past_days=%d forecast_days=%d",
             self.dataset_name, self.start, self.end, past_days, forecast_days,
         )
 
-        resp = requests.get(self.endpoint, params=params, timeout=60)
+        resp = requests.get(self.forecast_endpoint, params=params, timeout=60)
         resp.raise_for_status()
-        data = resp.json()
+        yield from self._flatten_hourly(resp.json())
 
-        # Open-Meteo returns {"hourly": {"time": [...], "temperature_2m": [...], ...}}
-        # Flatten into one record per hour.
+    # ── Shared ────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _flatten_hourly(data: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Flatten Open-Meteo hourly response into one record per hour."""
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
         for i, t in enumerate(times):

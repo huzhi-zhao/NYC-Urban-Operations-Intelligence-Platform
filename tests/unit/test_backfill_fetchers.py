@@ -292,20 +292,33 @@ def test_open_meteo_fetcher_flattens_hourly_response():
     ]
 
 
-def test_open_meteo_fetcher_raises_on_past_days_exceeding_limit(monkeypatch):
-    """If the window pushes past_days above the API limit, the fetcher
-    raises a ValueError before making the HTTP call."""
-    monkeypatch.setattr(
-        "ingestion.backfill.fetchers.open_meteo._window_to_past_forecast",
-        lambda *args, **kwargs: (200, 0),  # 200 > MAX_PAST_DAYS (92)
-    )
+def test_open_meteo_fetcher_routes_to_archive_for_old_windows(monkeypatch):
+    """Windows starting more than MAX_PAST_DAYS ago must route to the archive
+    API (archive-api.open-meteo.com/v1/archive) with start_date / end_date,
+    NOT to the forecast API. No ValueError should be raised."""
+    from ingestion.backfill.fetchers.open_meteo import ARCHIVE_BASE_URL
+
+    archive_response = {
+        "hourly": {"time": ["2025-01-01T00:00"], "temperature_2m": [5.0]},
+    }
     with patch("ingestion.backfill.fetchers.open_meteo.requests.get") as mock_get:
+        mock_get.return_value.json.return_value = archive_response
+        mock_get.return_value.raise_for_status = lambda: None
+        # start is ~530 days ago — well beyond the 92-day forecast limit
         fetcher = OpenMeteoFetcher(
-            _open_meteo_ds(), start=date(2025, 1, 1), end=date(2026, 6, 13),
+            _open_meteo_ds(), start=date(2025, 1, 1), end=date(2025, 4, 1),
         )
-        with pytest.raises(ValueError, match="92"):
-            list(fetcher.fetch())
-        mock_get.assert_not_called()
+        records = list(fetcher.fetch())
+    assert records == [{"time": "2025-01-01T00:00", "temperature_2m": 5.0}]
+    call_url = mock_get.call_args[0][0]
+    assert call_url == ARCHIVE_BASE_URL, (
+        f"Expected archive API URL {ARCHIVE_BASE_URL!r}, got {call_url!r}"
+    )
+    params = mock_get.call_args[1]["params"]
+    assert params["start_date"] == "2025-01-01"
+    assert params["end_date"] == "2025-03-31"  # end is exclusive → subtract 1 day
+    assert "past_days" not in params
+    assert "forecast_days" not in params
 
 
 def test_open_meteo_fetcher_raises_on_forecast_days_exceeding_limit(monkeypatch):

@@ -63,8 +63,10 @@ def test_window_all_future_starts_today():
 
 
 def test_window_all_future_next_week():
+    # start is 1 day after today; forecast = (end - today).days = 8
+    # so the API returns data from today through 2026-06-20 (inclusive), covering the window
     past, forecast = _window_to_past_forecast(date(2026, 6, 14), date(2026, 6, 21), TODAY)
-    assert (past, forecast) == (0, 7)
+    assert (past, forecast) == (0, 8)
 
 
 # ── Branch 3: window straddles today ────────────────────────────────────────
@@ -97,13 +99,17 @@ def test_zero_day_window_returns_zero_zero():
 
 
 def test_zero_day_window_in_the_past():
+    # start=2026-06-12, end=2026-06-12 (same day, all in past)
+    # past = (today - start).days = 1; forecast = max((end - today).days, 0) = 0
     past, forecast = _window_to_past_forecast(date(2026, 6, 12), date(2026, 6, 12), TODAY)
-    assert (past, forecast) == (0, 0)
+    assert (past, forecast) == (1, 0)
 
 
 def test_zero_day_window_in_the_future():
+    # start=end=2026-06-14 (one day after today)
+    # past = 0; forecast = (end - today).days = 1
     past, forecast = _window_to_past_forecast(date(2026, 6, 14), date(2026, 6, 14), TODAY)
-    assert (past, forecast) == (0, 0)
+    assert (past, forecast) == (0, 1)
 
 
 def test_one_year_past_window():
@@ -113,14 +119,13 @@ def test_one_year_past_window():
     assert (past, forecast) == (365, 0)
 
 
-def test_end_before_start_yields_negative_past():
-    """Defensive: an invalid window (end < start) returns a negative past
-    count. The caller is expected to validate the window before calling;
-    we don't raise here on purpose. This test documents the behavior so a
-    future refactor doesn't silently change it."""
+def test_end_before_start_yields_zero_zero():
+    """Defensive: an invalid window (end < start) is clamped to (0, 0) by
+    the max(..., 0) guards. The caller is expected to validate start < end
+    before calling. We don't raise here on purpose — this test documents
+    the behavior so a future refactor doesn't silently change it."""
     past, forecast = _window_to_past_forecast(date(2026, 6, 15), date(2026, 6, 10), TODAY)
-    assert past == -5
-    assert forecast == 0
+    assert (past, forecast) == (0, 0)
 
 
 # ── Return type contract ─────────────────────────────────────────────────────
