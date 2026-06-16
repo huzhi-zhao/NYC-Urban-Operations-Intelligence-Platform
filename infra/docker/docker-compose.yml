@@ -7,6 +7,8 @@ x-airflow-common: &airflow-common
   image: apache/airflow:2.10.4-python3.11
   env_file:
     - ../../.env
+  networks:
+    - bigdata-net
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
@@ -35,6 +37,8 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres-db:/var/lib/postgresql/data
+    networks:
+      - bigdata-net
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -59,7 +63,7 @@ services:
         airflow webserver
       "
     ports:
-      - "8080:8080"
+      - "8088:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -82,3 +86,7 @@ services:
 volumes:
   postgres-db:
   airflow-logs:
+
+networks:
+  bigdata-net:
+    external: true
