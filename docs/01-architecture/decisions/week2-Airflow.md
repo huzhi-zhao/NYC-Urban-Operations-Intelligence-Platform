@@ -1,6 +1,6 @@
 ## Backfill by Airflow
 
-![airflow-architexture-overview](Airflow-Backfill_Architecture-Overview.png)
+![airflow-architexture-overview](../../images/Airflow-Backfill_Architecture-Overview.png)
 
 ### GCP Composer 启动
 ```shell

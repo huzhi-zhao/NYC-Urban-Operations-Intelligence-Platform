@@ -24,7 +24,7 @@ Bronze层  →  Silver层  →  Gold层
                                     ↓
                           可视化 / 决策建议
 ```
-![](./docs/nyc_uoip_architecture.svg)
+![](docs/images/nyc_uoip_architecture.svg)
 ### 包结构
 [完整包结构](./docs/NYC-UOIP-Repository%20Structure.pdf)
 

@@ -2,7 +2,7 @@
 ### 如何做增量？
 
 纵切
-![](pipeline-incremental.svg)
+![](../../images/pipeline-incremental.svg)
 
 ```text
 Airflow Scheduler

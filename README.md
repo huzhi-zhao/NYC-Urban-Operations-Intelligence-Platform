@@ -24,7 +24,7 @@ Bronze Layer  →  Silver Layer  →  Gold Layer
                                      ↓
                           Dashboard / Recommendations
 ```
-![](./docs/nyc_uoip_architecture.svg)
+![](docs/images/nyc_uoip_architecture.svg)
 ### Package Structure
 ![Complete Package Structure](./docs/NYC-UOIP-Repository%20Structure.pdf)
 ```
