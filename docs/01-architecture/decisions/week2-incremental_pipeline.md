@@ -28,6 +28,27 @@
 |`dags/dag_ingest_open_meteo.py`|每天 06:00，拉昨天确认数据 + 未来 7 天预报|
 |`dags/dag_ingest_dcp.py`|每月 1 日 06:00，刷新静态边界数据|
 
+#### 数据一致性保障
+
+|优先级|措施|工作量|
+|---|---|---|
+|**立刻做**|`catchup=True` + `max_active_runs=1`|改 2 行|
+|**立刻做**|加 `sla` 参数，失败发日志告警|改 4 行|
+|**本周做**|写一个 `dag_audit_bronze.py`，每天扫 manifest 发现缺口自动补跑|新建 1 个 DAG|
+|**后续做**|接 Slack / Email 真实告警|配置问题|
+
+```text
+ingest DAG 失败
+    ↓
+retries=3 自动重试（覆盖网络抖动）
+    ↓ 仍失败
+catchup=True 下次 scheduler 启动自动补跑
+    ↓ 仍有缺口
+dag_audit_bronze 每天 08:00 扫描 manifest
+    发现缺口 → 直接调 bulk.py 补填
+    补填失败 → task 标红 + 日志告警
+
+```
 ---
 
 ### 如何做增量Pipeline

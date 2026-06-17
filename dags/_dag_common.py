@@ -10,18 +10,22 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from airflow.models.param import Param
 
 logger = logging.getLogger(__name__)
 
+# Ingest DAGs start catching up from this date (first day we deployed incremental ingest).
+INGEST_START_DATE = datetime(2026, 6, 16)
+
 DEFAULT_ARGS = {
     "owner": "nyc-uoip",
     "depends_on_past": False,
+    "start_date": INGEST_START_DATE,
     "retries": 3,
     "retry_delay": timedelta(minutes=5),
-    "email_on_failure": False,  # set to True and configure SMTP in Composer if needed
+    "email_on_failure": False,
 }
 
 # Standard Params for all date-range backfill DAGs.
@@ -71,6 +75,16 @@ def get_last_month(context: dict) -> tuple[date, date]:
     return first_of_interval_month, first_of_interval_month.replace(
         month=first_of_interval_month.month % 12 + 1,
         year=first_of_interval_month.year + (1 if first_of_interval_month.month == 12 else 0),
+    )
+
+
+def sla_miss_callback(dag, task_list, blocking_task_list, slas, blocking_tis) -> None:
+    """Log SLA misses clearly so they surface in Airflow task logs and scheduler logs."""
+    logger.warning(
+        "SLA MISSED | dag=%s | missed_tasks=%s | blocking_tasks=%s",
+        dag.dag_id,
+        [t.task_id for t in (task_list or [])],
+        [t.task_id for t in (blocking_task_list or [])],
     )
 
 
