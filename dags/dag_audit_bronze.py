@@ -48,6 +48,7 @@ MONTHLY_SOURCES = [
     ("SRC-NYPD", "nypd_complaint_current"),
     ("SRC-NYPD", "nypd_shooting_incident"),
 ]
+# SRC-DCP is static (borough boundaries never change) — excluded from audit
 
 
 # ── GCS manifest existence checks ─────────────────────────────────────────────

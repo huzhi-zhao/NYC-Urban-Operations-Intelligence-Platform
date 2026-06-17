@@ -48,40 +48,8 @@ NYC 311 呼叫中心及应急调度部门拥有有限的服务与巡逻资源。
 
 ### 核心商业目标
 
-系统每天自动生成：
+[Business Objectives](business-objectives.html)
 
-**1. Operational Load Score (运营负荷分)**
-
-示例：
-
-|Borough|Operational Load Score|
-|---|---|
-|Brooklyn|87|
-|Manhattan|75|
-|Queens|42|
-
-用于识别未来24小时高运营负荷区域。
-
-**2. Operational Drivers (驱动因素)**
-
-解释高负荷来源： 例如： **Brooklyn:**
-
-- Severe Weather Impact (Blizzard / 暴雪)
-- High Volume 311 Heating Complaints (大量 311 供暖中断投诉)
-- Historical Traffic Collision Pattern (历史交通事故高发区)
-
-**3. Resource Allocation Recommendation (资源配置建议)**
-
-根据负荷自动给出跨部门资源建议： 示例： **Increase Deployment:**
-
-- **311 Call Center:** +15% agents for Heating/Housing queue in Brooklyn.
-- **Traffic/EMS:** +3 standby ambulances in Manhattan cross-streets.
-
-**Reduce Deployment:**
-
-- **Parks Dept:** -2 regular inspection teams in Queens (due to snow).
-
-目标是辅助城市应急与市政服务的宏观部署决策。
 
 ### 数据来源（必须真实、公开、稳定可获得）
 
