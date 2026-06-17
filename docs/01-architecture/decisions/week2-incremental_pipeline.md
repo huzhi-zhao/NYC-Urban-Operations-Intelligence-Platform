@@ -1,5 +1,36 @@
+### 已实现：增量数据入Bronze Layer
+**目标**：新建 4 个增量 DAG，每天定时自动拉取最新数据落入 Bronze。
 
-### 如何做增量？
+```
+新增文件
+├── dags/dag_ingest_nyc_311.py        每日 06:00，拉昨天的 311 数据
+├── dags/dag_ingest_nypd.py           每月 1 日 06:00，拉上个月的 NYPD 数据
+├── dags/dag_ingest_open_meteo.py     每日 06:00，拉昨天 + 未来 7 天天气
+├── dags/dag_ingest_dcp.py            每月 1 日 06:00，刷新静态边界数据
+└── dags/_dag_common.py               新增 get_yesterday() / get_last_month() 两个工具函数
+```
+
+###  backfill DAG 的本质区别
+
+
+| -     | backfill DAG     | ingest DAG（增量）           |
+| ----- | ---------------- |--------------------------|
+| 触发方式  | 手动，Params 传日期    | 定时自动                     |
+| 日期来源  | UI 输入的 start/end | `data_interval_start` 推算 |
+| 复用的代码 | `bulk.py` 函数     | 完全相同的 `bulk.py` 函数       |
+| 幂等性   | ✅                | ✅（重跑同一 Run 结果一样）         |
+
+|文件|作用|
+|---|---|
+|`dags/_dag_common.py`|新增 `get_yesterday()` / `get_last_month()` 两个工具函数|
+|`dags/dag_ingest_nyc_311.py`|每天 06:00，拉昨天 + 7 天 lookback 的 311 数据|
+|`dags/dag_ingest_nypd.py`|每月 1 日 06:00，拉上月 NYPD 数据|
+|`dags/dag_ingest_open_meteo.py`|每天 06:00，拉昨天确认数据 + 未来 7 天预报|
+|`dags/dag_ingest_dcp.py`|每月 1 日 06:00，刷新静态边界数据|
+
+---
+
+### 如何做增量Pipeline
 
 纵切
 ![](../../images/pipeline-incremental.svg)

@@ -1,0 +1,55 @@
+"""
+Monthly refresh DAG for SRC-DCP (NYC Borough Boundaries GeoJSON).
+
+Schedule  : 06:00 UTC on the 1st of every month
+Strategy  : static snapshot — no date dimension, always overwrites the same GCS path
+
+Borough boundaries change rarely (last update: 2023). Monthly refresh is conservative
+but ensures we pick up any upstream geometry corrections without manual intervention.
+
+Writes to: bronze/raw/SRC-DCP/borough_boundaries/data_static.json
+"""
+
+from __future__ import annotations
+
+import logging
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+from _dag_common import DEFAULT_ARGS, get_bucket
+
+logger = logging.getLogger(__name__)
+
+SOURCE_ID = "SRC-DCP"
+
+
+def _run_ingest(**context) -> None:
+    from scripts.backfill.bulk import backfill_static
+
+    bucket = get_bucket({})
+    logger.info("%s monthly refresh: fetching static borough boundaries", SOURCE_ID)
+
+    results = backfill_static(SOURCE_ID, bucket=bucket)
+
+    failed = [r for r in results if r.status == "failed"]
+    if failed:
+        raise RuntimeError(f"DCP static fetch failed: {failed[0].error}")
+
+    total_files = sum(r.manifest_count for r in results)
+    logger.info("%s: %d static file(s) refreshed in GCS Bronze", SOURCE_ID, total_files)
+
+
+with DAG(
+    dag_id="dag_ingest_dcp",
+    description="Monthly refresh: NYC Borough Boundaries GeoJSON → GCS Bronze (static snapshot)",
+    default_args=DEFAULT_ARGS,
+    schedule="0 6 1 * *",
+    catchup=False,
+    tags=["ingest", "dcp", "bronze", "geojson", "static", "monthly"],
+) as dag:
+
+    run_ingest = PythonOperator(
+        task_id="run_ingest",
+        python_callable=_run_ingest,
+    )
