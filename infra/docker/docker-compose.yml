@@ -17,6 +17,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__SECRET_KEY: 'nyc-uoip-secret-change-me'
     AIRFLOW__CORE__AUTH_MANAGER: 'airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-webserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: 'nyc-uoip-jwt-secret-change-me'
+    AIRFLOW__API_AUTH__JWT_ISSUER: 'airflow'
     PYTHONPATH: /opt/airflow/plugins
   volumes:
     - ../../dags:/opt/airflow/dags
@@ -67,7 +69,7 @@ services:
     ports:
       - "28080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
       timeout: 10s
       retries: 5
