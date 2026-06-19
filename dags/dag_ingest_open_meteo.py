@@ -22,7 +22,7 @@ from datetime import timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from _dag_common import DEFAULT_ARGS, get_bucket, get_yesterday, sla_miss_callback
+from _dag_common import DEFAULT_ARGS, get_bucket, get_yesterday
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,10 @@ with DAG(
     schedule="0 6 * * *",
     catchup=True,
     max_active_runs=1,
-    sla_miss_callback=sla_miss_callback,
     tags=["ingest", "open-meteo", "bronze", "weather", "daily"],
 ) as dag:
 
     run_ingest = PythonOperator(
         task_id="run_ingest",
         python_callable=_run_ingest,
-        sla=timedelta(hours=1),
     )

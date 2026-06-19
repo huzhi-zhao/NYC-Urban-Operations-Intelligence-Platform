@@ -78,16 +78,6 @@ def get_last_month(context: dict) -> tuple[date, date]:
     )
 
 
-def sla_miss_callback(dag, task_list, blocking_task_list, slas, blocking_tis) -> None:
-    """Log SLA misses clearly so they surface in Airflow task logs and scheduler logs."""
-    logger.warning(
-        "SLA MISSED | dag=%s | missed_tasks=%s | blocking_tasks=%s",
-        dag.dag_id,
-        [t.task_id for t in (task_list or [])],
-        [t.task_id for t in (blocking_task_list or [])],
-    )
-
-
 def get_bucket(params) -> str:
     """Resolve GCS bucket from DAG Param or GCS_BUCKET_NAME env var."""
     bucket = (params.get("bucket") or "").strip()

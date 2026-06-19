@@ -13,12 +13,11 @@ GCS output: bronze/raw/SRC-NYPD/{dataset}/data_{YYYY-MM}.json
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from _dag_common import DEFAULT_ARGS, get_bucket, get_last_month, sla_miss_callback
+from _dag_common import DEFAULT_ARGS, get_bucket, get_last_month
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +49,10 @@ with DAG(
     schedule="0 6 1 * *",
     catchup=True,
     max_active_runs=1,
-    sla_miss_callback=sla_miss_callback,
     tags=["ingest", "nypd", "bronze", "socrata", "monthly"],
 ) as dag:
 
     run_ingest = PythonOperator(
         task_id="run_ingest",
         python_callable=_run_ingest,
-        sla=timedelta(hours=3),
     )

@@ -29,7 +29,7 @@ from datetime import date, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from _dag_common import DEFAULT_ARGS, get_bucket, get_yesterday, sla_miss_callback
+from _dag_common import DEFAULT_ARGS, get_bucket, get_yesterday
 
 logger = logging.getLogger(__name__)
 
@@ -178,12 +178,10 @@ with DAG(
     schedule="0 8 * * *",
     catchup=False,
     max_active_runs=1,
-    sla_miss_callback=sla_miss_callback,
     tags=["audit", "bronze", "data-quality", "daily"],
 ) as dag:
 
     audit_and_fill = PythonOperator(
         task_id="audit_and_fill",
         python_callable=_audit_and_fill,
-        sla=timedelta(hours=1),
     )

@@ -15,12 +15,11 @@ GCS output: bronze/raw/SRC-DCP/borough_boundaries/data_static.json
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from _dag_common import DEFAULT_ARGS, get_bucket, sla_miss_callback
+from _dag_common import DEFAULT_ARGS, get_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +48,10 @@ with DAG(
     schedule=None,
     catchup=False,
     max_active_runs=1,
-    sla_miss_callback=sla_miss_callback,
     tags=["ingest", "dcp", "bronze", "geojson", "static", "monthly"],
 ) as dag:
 
     run_ingest = PythonOperator(
         task_id="run_ingest",
         python_callable=_run_ingest,
-        sla=timedelta(minutes=30),
     )
