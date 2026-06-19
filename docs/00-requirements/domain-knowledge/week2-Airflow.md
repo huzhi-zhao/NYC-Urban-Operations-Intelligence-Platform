@@ -43,3 +43,21 @@ airflow tasks run dag_backfill_nyc_311 run_backfill 2024-01-01
 |适合场景|调用现成的 shell 脚本/系统命令(比如 `spark-submit`、`curl`、`gsutil cp`)|需要用 Python 写业务逻辑(调 API、解析 JSON、写 Pandas 处理)|
 |Schedule|`timedelta(days=1)`(固定周期表达)|`"@daily"`(cron 预设别名,等价于每天跑一次)|
 |任务数/流程|3 个任务:extract → transform → load|4 个任务:extract → clean → transform → load(多了一步 cleaning)|
+
+
+
+`@task` 装饰器(TaskFlow API)和 `PythonOperator` 不是两套不同的东西——**`@task` 本质上就是 `PythonOperator` 的语法糖,底层执行机制完全一样**,只是写法更省事,而且这次想加的分支/循环用 TaskFlow 写起来明显更顺手:
+
+## 为什么这次换了写法
+
+1. **自动传值,不用手写 XCom**
+    - 旧写法(`PythonOperator`):函数之间传数据要手动 `ti.xcom_push(...)` / `ti.xcom_pull(...)`,啰嗦。
+    - TaskFlow:函数 `return` 什么,下游函数直接当参数接,比如 `sum_cleaned(cleaned)` 里的 `cleaned` 就是 `clean_item` 的返回值,框架自动用 XCom 搬运。
+2. **`.expand()` 动态映射只支持 TaskFlow 风格的任务**
+    - 你要的"循环"(对列表逐项生成并行任务实例)是 `@task` 函数才能 `.expand()`。`PythonOperator` 也能做动态映射(`PythonOperator.partial(...).expand(...)`),但写法更绕,官方教程现在主推 `@task`。
+3. **`@task.branch` 是 `BranchPythonOperator` 的同款语法糖**
+    - 一行装饰器替代 `BranchPythonOperator(task_id=..., python_callable=...)` 那一整段。
+
+## 它们是同一回事吗
+
+是。`@task` 编译后,内部就是创建一个 `PythonOperator`(确切说现在是 `_PythonDecoratedOperator`,继承自它)。所以你前面看到的 `hello_airflow_python.py` 第一版(显式 `PythonOperator(task_id=..., python_callable=...)`)**完全没错,也能正常跑**,只是这次想顺便演示分支+循环,TaskFlow 写法更紧凑、更接近官方现在的教程范例。
