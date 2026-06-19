@@ -33,3 +33,13 @@ airflow tasks run dag_backfill_nyc_311 run_backfill 2024-01-01
 |直接 import Python 文件|✅ 就是这个|纯 Python 任务、小中型 ETL|
 |DockerOperator / KubernetesPodOperator|可以选用|依赖复杂、需隔离环境|
 |打包 wheel 安装|可以选用|大型项目、有 C 扩展依赖|
+
+
+### DAG
+|`   hello_airflow.py`|`hello_airflow_python.py`|
+|---|---|
+|Operator|`BashOperator`|`PythonOperator`|
+|任务怎么写|`bash_command='echo "extract work"'` —— 跑一条 shell 命令|`python_callable=extract_data` —— 调一个 Python 函数|
+|适合场景|调用现成的 shell 脚本/系统命令(比如 `spark-submit`、`curl`、`gsutil cp`)|需要用 Python 写业务逻辑(调 API、解析 JSON、写 Pandas 处理)|
+|Schedule|`timedelta(days=1)`(固定周期表达)|`"@daily"`(cron 预设别名,等价于每天跑一次)|
+|任务数/流程|3 个任务:extract → transform → load|4 个任务:extract → clean → transform → load(多了一步 cleaning)|
