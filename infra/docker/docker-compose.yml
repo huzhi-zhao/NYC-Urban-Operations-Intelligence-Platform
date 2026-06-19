@@ -84,6 +84,14 @@ services:
       timeout: 10s
       retries: 5
 
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: >
+      bash -c "
+        pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage apache-airflow-providers-fab &&
+        airflow dag-processor
+      "
+
 volumes:
   postgres-db:
   airflow-logs:
