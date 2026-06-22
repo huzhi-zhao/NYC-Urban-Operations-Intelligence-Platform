@@ -1,21 +1,25 @@
 """
-GCS Loader — writes raw JSON records to Bronze layer on Google Cloud Storage.
+GCS Loader — writes raw NDJSON records to Bronze layer on Google Cloud Storage.
+
+Data files are newline-delimited JSON (one record per line) so they can be
+appended/streamed and a single corrupt line never invalidates the whole file.
+Manifest files remain single JSON objects (metadata, not records).
 
 Storage layouts:
 
   # Daily incremental (DAG loads) — partition by ingest_date
-  {bucket}/bronze/raw/{source_id}/{dataset_name}/ingest_date=YYYY-MM-DD/data.json
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/ingest_date=YYYY-MM-DD/data.ndjson
   {bucket}/bronze/raw/{source_id}/{dataset_name}/ingest_date=YYYY-MM-DD/manifest.json
 
   # Daily split (backfill of high-volume event streams) — records are
   # grouped by their timestamp_field and one file is written per day,
   # nested inside a month folder. manifest.json in each month folder
   # describes the most recent upload.
-  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/data_YYYY-MM-DD.json
-  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/manifest.json
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/data_YYYY-MM-DD.ndjson
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/YYYY-MM/manifest_YYYY-MM-DD.json
 
   # Monthly backfill / shard — flat files, month encoded in filename
-  {bucket}/bronze/raw/{source_id}/{dataset_name}/data_YYYY-MM.json
+  {bucket}/bronze/raw/{source_id}/{dataset_name}/data_YYYY-MM.ndjson
   {bucket}/bronze/raw/{source_id}/{dataset_name}/manifest_YYYY-MM.json
 
 The daily split layout is used by sources with ``partition_strategy: daily``
@@ -67,10 +71,10 @@ class ManifestEntry:
 
 
 class GCSBronzeLoader:
-    """Writes raw JSON records to GCS Bronze layer with manifest."""
+    """Writes raw NDJSON records to GCS Bronze layer with a JSON manifest."""
 
     # Daily incremental filenames
-    DATA_FILE = "data.json"
+    DATA_FILE = "data.ndjson"
     MANIFEST_FILE = "manifest.json"
 
     def __init__(
@@ -93,6 +97,13 @@ class GCSBronzeLoader:
 
     def _sha256(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
+
+    def _to_ndjson(self, records: list[dict[str, Any]]) -> bytes:
+        """Serialize records as newline-delimited JSON (one record per line)."""
+        if not records:
+            return b""
+        lines = (json.dumps(r, ensure_ascii=False) for r in records)
+        return ("\n".join(lines) + "\n").encode("utf-8")
 
     def _date_range(
         self, records: list[dict[str, Any]]
@@ -170,10 +181,17 @@ class GCSBronzeLoader:
             timestamp_field=self.timestamp_field,
         )
 
-    def _upload(self, bucket: storage.Bucket, path: str, content: bytes, meta: dict[str, str]) -> None:
+    def _upload(
+        self,
+        bucket: storage.Bucket,
+        path: str,
+        content: bytes,
+        meta: dict[str, str],
+        content_type: str = "application/json",
+    ) -> None:
         """Upload bytes to GCS; overwrites existing object at path."""
         blob = bucket.blob(path)
-        blob.upload_from_string(content, content_type="application/json")
+        blob.upload_from_string(content, content_type=content_type)
         blob.metadata = meta
 
     # ── Daily incremental write (DAG loads) ────────────────────────────────────
@@ -188,13 +206,13 @@ class GCSBronzeLoader:
         """
         Write records using daily ingest_date partition.
 
-        Path: bronze/raw/{source_id}/{dataset_name}/ingest_date={date}/data.json
+        Path: bronze/raw/{source_id}/{dataset_name}/ingest_date={date}/data.ndjson
               bronze/raw/{source_id}/{dataset_name}/ingest_date={date}/manifest.json
 
         Idempotent: re-running for the same ingest_date overwrites both files.
         """
         bucket = self._client.bucket(self.bucket_name)
-        content = json.dumps(records, indent=2, ensure_ascii=False).encode("utf-8")
+        content = self._to_ndjson(records)
         month = ingest_date.strftime("%Y-%m")
 
         manifest = self._make_manifest(
@@ -213,7 +231,7 @@ class GCSBronzeLoader:
             "dataset_name": dataset_name,
             "ingest_date": ingest_date.isoformat(),
             "record_count": str(len(records)),
-        })
+        }, content_type="application/x-ndjson")
 
         manifest_path = f"bronze/raw/{source_id}/{dataset_name}/ingest_date={ingest_date.isoformat()}/{self.MANIFEST_FILE}"
         manifest_bytes = json.dumps(manifest.to_dict(), indent=2).encode("utf-8")
@@ -237,7 +255,7 @@ class GCSBronzeLoader:
         """
         Write a flat monthly shard — no month= subdirectory.
 
-        Path: bronze/raw/{source_id}/{dataset_name}/data_{YYYY-MM}.json
+        Path: bronze/raw/{source_id}/{dataset_name}/data_{YYYY-MM}.ndjson
               bronze/raw/{source_id}/{dataset_name}/manifest_{YYYY-MM}.json
 
         month_partition: YYYY-MM string (e.g. "2026-03").
@@ -246,7 +264,7 @@ class GCSBronzeLoader:
         fetch_timestamp in the manifest reflects the time of the latest upload.
         """
         bucket = self._client.bucket(self.bucket_name)
-        content = json.dumps(records, indent=2, ensure_ascii=False).encode("utf-8")
+        content = self._to_ndjson(records)
         ingest_date = date.today()
 
         manifest = self._make_manifest(
@@ -254,18 +272,18 @@ class GCSBronzeLoader:
             dataset_name=dataset_name,
             ingest_date=ingest_date,
             month_partition=month_partition,
-            filename=f"data_{month_partition}.json",
+            filename=f"data_{month_partition}.ndjson",
             records=records,
             content_bytes=content,
         )
 
-        data_path = f"bronze/raw/{source_id}/{dataset_name}/data_{month_partition}.json"
+        data_path = f"bronze/raw/{source_id}/{dataset_name}/data_{month_partition}.ndjson"
         self._upload(bucket, data_path, content, {
             "source_id": source_id,
             "dataset_name": dataset_name,
             "month_partition": month_partition,
             "record_count": str(len(records)),
-        })
+        }, content_type="application/x-ndjson")
 
         manifest_path = f"bronze/raw/{source_id}/{dataset_name}/manifest_{month_partition}.json"
         manifest_bytes = json.dumps(manifest.to_dict(), indent=2).encode("utf-8")
@@ -292,12 +310,12 @@ class GCSBronzeLoader:
         Open-Meteo). Records are grouped by their date in ``timestamp_field``
         and each group is written as its own file with a paired manifest:
 
-            bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/data_{YYYY-MM-DD}.json
+            bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/data_{YYYY-MM-DD}.ndjson
             bronze/raw/{source_id}/{dataset_name}/{YYYY-MM}/manifest_{YYYY-MM-DD}.json
 
         Each day has its own manifest describing the data file in the
         same folder. To enumerate all days in a month, list the
-        ``data_*.json`` objects; each one has a matching ``manifest_*.json``.
+        ``data_*.ndjson`` objects; each one has a matching ``manifest_*.json``.
 
         Records with a missing or unparseable timestamp are dropped (they
         cannot be assigned to a day). If no records remain, the call
@@ -325,12 +343,10 @@ class GCSBronzeLoader:
         for day_iso, day_records in sorted(groups.items()):
             day = date.fromisoformat(day_iso)
             month_partition = day.strftime("%Y-%m")
-            data_filename = f"data_{day_iso}.json"
+            data_filename = f"data_{day_iso}.ndjson"
             manifest_filename = f"manifest_{day_iso}.json"
 
-            content = json.dumps(
-                day_records, indent=2, ensure_ascii=False,
-            ).encode("utf-8")
+            content = self._to_ndjson(day_records)
             manifest = self._make_manifest(
                 source_id=source_id,
                 dataset_name=dataset_name,
@@ -351,7 +367,7 @@ class GCSBronzeLoader:
                 "data_date": day_iso,
                 "month_partition": month_partition,
                 "record_count": str(len(day_records)),
-            })
+            }, content_type="application/x-ndjson")
 
             manifest_path = (
                 f"bronze/raw/{source_id}/{dataset_name}/"

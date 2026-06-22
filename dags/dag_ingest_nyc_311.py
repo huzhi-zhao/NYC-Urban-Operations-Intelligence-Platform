@@ -10,7 +10,7 @@ SLA             : 2 hours — logs a warning if the task hasn't finished by 08:0
 The 7-day lookback window ensures late-arriving 311 records (status updates applied
 days after creation) are captured on every run, not just the target date.
 
-GCS output: bronze/raw/SRC-NYC-311/nyc_311/{YYYY-MM}/data_{YYYY-MM-DD}.json
+GCS output: bronze/raw/SRC-NYC-311/nyc_311/{YYYY-MM}/data_{YYYY-MM-DD}.ndjson
 """
 
 from __future__ import annotations

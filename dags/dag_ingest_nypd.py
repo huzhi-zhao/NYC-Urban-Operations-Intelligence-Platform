@@ -7,7 +7,7 @@ Catchup         : enabled — missed months are auto-backfilled on scheduler res
 max_active_runs : 1 — prevents concurrent month runs racing on the same GCS paths
 SLA             : 3 hours — NYPD has 4 datasets; allow extra time vs daily sources
 
-GCS output: bronze/raw/SRC-NYPD/{dataset}/data_{YYYY-MM}.json
+GCS output: bronze/raw/SRC-NYPD/{dataset}/data_{YYYY-MM}.ndjson
 """
 
 from __future__ import annotations

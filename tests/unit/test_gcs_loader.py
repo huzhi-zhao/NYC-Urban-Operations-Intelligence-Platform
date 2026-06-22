@@ -84,9 +84,9 @@ def test_write_daily_splits_records_into_per_day_files():
 
     # 3 days, 3 manifests in chronological order
     assert [m.filename for m in manifests] == [
-        "data_2026-03-21.json",
-        "data_2026-03-22.json",
-        "data_2026-04-01.json",
+        "data_2026-03-21.ndjson",
+        "data_2026-03-22.ndjson",
+        "data_2026-04-01.ndjson",
     ]
     # Record counts per day: A+B, C, D
     assert [m.record_count for m in manifests] == [2, 1, 1]
@@ -97,9 +97,9 @@ def test_write_daily_splits_records_into_per_day_files():
     paths = [p for (p, _, _) in bucket.uploaded]
     # 3 data files + 3 per-day manifests = 6 uploads
     assert len(paths) == 6
-    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-21.json" in paths
-    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-22.json" in paths
-    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-04/data_2026-04-01.json" in paths
+    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-21.ndjson" in paths
+    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-22.ndjson" in paths
+    assert "bronze/raw/SRC-NYC-311/nyc_311/2026-04/data_2026-04-01.ndjson" in paths
     # Per-day manifest files (one per data file)
     assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/manifest_2026-03-21.json" in paths
     assert "bronze/raw/SRC-NYC-311/nyc_311/2026-03/manifest_2026-03-22.json" in paths
@@ -114,11 +114,11 @@ def test_write_daily_writes_only_records_within_their_day():
         records=_sample_311_records(),
     )
     # Find the day-1 data file and confirm it contains only the day-1 records
-    day1_path = "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-21.json"
+    day1_path = "bronze/raw/SRC-NYC-311/nyc_311/2026-03/data_2026-03-21.ndjson"
     day1_content = next(
         content for (path, content, _) in bucket.uploaded if path == day1_path
     )
-    payload = json.loads(day1_content)
+    payload = [json.loads(line) for line in day1_content.decode("utf-8").splitlines()]
     keys = sorted(r["unique_key"] for r in payload)
     assert keys == ["A", "B"]
 
@@ -144,14 +144,14 @@ def test_write_daily_per_day_manifest_describes_that_day():
     )
 
     day21 = json.loads(day21_content)
-    assert day21["filename"] == "data_2026-03-21.json"
+    assert day21["filename"] == "data_2026-03-21.ndjson"
     assert day21["record_count"] == 2
     assert day21["data_date_min"] == "2026-03-21"
     assert day21["data_date_max"] == "2026-03-21"
     assert day21["month_partition"] == "2026-03"
 
     day22 = json.loads(day22_content)
-    assert day22["filename"] == "data_2026-03-22.json"
+    assert day22["filename"] == "data_2026-03-22.ndjson"
     assert day22["record_count"] == 1
     assert day22["data_date_min"] == "2026-03-22"
     assert day22["data_date_max"] == "2026-03-22"
@@ -171,8 +171,8 @@ def test_write_daily_handles_open_meteo_time_field():
         records=records,
     )
     assert [m.filename for m in manifests] == [
-        "data_2026-03-21.json",
-        "data_2026-03-22.json",
+        "data_2026-03-21.ndjson",
+        "data_2026-03-22.ndjson",
     ]
     paths = [p for (p, _, _) in bucket.uploaded]
     assert "bronze/raw/SRC-Open-Meteo/nyc_weather_forecast/2026-03/manifest_2026-03-21.json" in paths
@@ -192,8 +192,8 @@ def test_write_daily_handles_z_suffix_iso_timestamps():
         records=records,
     )
     assert [m.filename for m in manifests] == [
-        "data_2026-03-21.json",
-        "data_2026-03-22.json",
+        "data_2026-03-21.ndjson",
+        "data_2026-03-22.ndjson",
     ]
 
 
@@ -212,7 +212,7 @@ def test_write_daily_drops_records_with_missing_or_bad_timestamp():
     )
     assert len(manifests) == 1
     assert manifests[0].record_count == 1
-    assert manifests[0].filename == "data_2026-03-21.json"
+    assert manifests[0].filename == "data_2026-03-21.ndjson"
 
 
 def test_write_daily_returns_empty_list_when_no_usable_records():

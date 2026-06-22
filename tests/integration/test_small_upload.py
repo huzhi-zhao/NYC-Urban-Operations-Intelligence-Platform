@@ -90,7 +90,7 @@ def test_small_upload_overwrites_data_and_manifest(gcs_loader):
 
     assert manifest1.record_count == 2
     assert manifest1.month_partition == TEST_MONTH
-    assert manifest1.filename == f"data_{TEST_MONTH}.json"
+    assert manifest1.filename == f"data_{TEST_MONTH}.ndjson"
     assert manifest1.sha256_checksum  # non-empty
     assert manifest1.data_date_min is not None
     assert manifest1.data_date_max is not None
@@ -116,7 +116,7 @@ def test_small_upload_overwrites_data_and_manifest(gcs_loader):
 
     # Verify GCS objects actually exist
     bucket = gcs_loader._client.bucket(BUCKET)
-    data_path = f"bronze/raw/{TEST_SOURCE}/{TEST_DATASET}/data_{TEST_MONTH}.json"
+    data_path = f"bronze/raw/{TEST_SOURCE}/{TEST_DATASET}/data_{TEST_MONTH}.ndjson"
     manifest_path = f"bronze/raw/{TEST_SOURCE}/{TEST_DATASET}/manifest_{TEST_MONTH}.json"
 
     assert bucket.blob(data_path).exists(), f"Data file not found: {data_path}"

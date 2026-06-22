@@ -19,14 +19,14 @@ Bronze path layout is chosen per source by ``source.partition_strategy``:
 - ``daily``   — high-volume event streams (NYC 311, Open-Meteo). Records are
                 split by ``timestamp_field`` into per-day files inside a
                 month folder:
-                ``gs://{bucket}/bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.json``
-                + a ``manifest.json`` per month folder.
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/{YYYY-MM}/data_{YYYY-MM-DD}.ndjson``
+                + a ``manifest_{YYYY-MM-DD}.json`` per day.
 - ``monthly`` — lower-volume event streams (NYPD). One file per month:
-                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_{YYYY-MM}.json``
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_{YYYY-MM}.ndjson``
                 + ``manifest_{YYYY-MM}.json``.
 - ``static``  — reference data with no time dimension (DCP borough
                 boundaries). Fixed shard name:
-                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_static.json``
+                ``gs://{bucket}/bronze/raw/{sid}/{ds}/data_static.ndjson``
                 + ``manifest_static.json``.
 """
 

@@ -2,6 +2,20 @@
 
 ## To Silver 前置操作
 
+  
+在写 Silver 清洗代码之前，企业级做法通常会先做这几件事（不是写代码，是探查+定契约）：  
+  
+1. **Explore Bronze 真实数据**：抽样读几天/几月的原始 JSON（311、NYPD、Open-Meteo、DCP），核对字段名、类型、空值率、时间字段格式是否和 `ingestion/schemas/` 里的 Pydantic 模型一致——Socrata 字段经常会有 null 或类型漂移。  
+2. **补上 `contracts/`**：AGENTS.md 里明确要求写 Spark 代码前先看 `contracts/`，但这个目录还不存在，得先建（source-registry + 各数据集的 schema 契约）。  
+3. **定义 `spark/schemas/` 的 StructType**：基于探查结果而不是凭记忆,对应每个数据集的 Silver schema。  
+4. **定义 `sql/ddl/`**：Gold 表结构要提前定好，尤其 `dim_geography` 的 borough 空间字段。  
+5. **明确分区/去重/幂等策略**：Silver 按 date 分区，哪个字段做唯一键去重（避免 7 天回溯窗口造成重复）。  
+  
+这一步的主要权衡是：花时间先探查数据 vs 直接写转换代码再迭代修。鉴于 Socrata 字段历史上出过变更（CLAUDE.md 里也提到"上游 schema 变更需升级人类"这条红线），我建议先探查 + 定 contracts/schemas,再写 transform,这样能避免后面重写。
+
+
+
+
 ### 1. Bronze 数据质量审计（Data Profiling）
 
 在写任何转换代码之前，先摸清楚原始数据的真实面貌：
@@ -13,6 +27,12 @@
 - 每天的记录数是否连续，有没有某几天数据量异常低（API 断档）？
 
 工具：Great Expectations / dbt tests / 自己写 PySpark profiling job
+
+
+#### BigQuery Autodetect
+BigQuery 的 **External Table** 功能直接指向 GCS 上的 Bronze 文件(`gs://nyc-uoip-bronze/bronze/raw/{sid}/{ds}/...`),
+
+
 
 ---
 

@@ -11,7 +11,7 @@ Forecast files are intentionally overwritten on each run: Open-Meteo updates its
 forecast model multiple times per day, so yesterday's forecast for D+3 is less
 accurate than today's. Daily refresh gives Silver layer the freshest forecast data.
 
-GCS output: bronze/raw/SRC-Open-Meteo/nyc_weather_forecast/{YYYY-MM}/data_{YYYY-MM-DD}.json
+GCS output: bronze/raw/SRC-Open-Meteo/nyc_weather_forecast/{YYYY-MM}/data_{YYYY-MM-DD}.ndjson
 """
 
 from __future__ import annotations
