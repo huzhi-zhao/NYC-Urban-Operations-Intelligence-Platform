@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
+from pyspark.sql.types import StructType
 from pyspark.sql.window import Window
 
 from spark.transforms.timestamp_normalizer import localize_naive_to_utc, to_partition_date
@@ -88,3 +89,23 @@ def split_by_validity(df: DataFrame) -> tuple[DataFrame, DataFrame]:
     valid = df.filter(F.col("_reject_reason").isNull()).drop("_reject_reason")
     rejected = df.filter(F.col("_reject_reason").isNotNull())
     return valid, rejected
+
+
+def enforce_schema(df: DataFrame, schema: StructType) -> DataFrame:
+    """Align `df` to exactly `schema` before writing — fail fast on drift.
+
+    Raises if the transform pipeline's output columns don't exactly match the
+    declared Silver schema (spark/schemas/weather_schemas.py), so a code
+    change that silently drops/adds/retypes a column breaks the job instead
+    of writing an undocumented table shape.
+    """
+    expected = {f.name for f in schema.fields}
+    actual = set(df.columns)
+    missing = expected - actual
+    unexpected = actual - expected
+    if missing or unexpected:
+        raise ValueError(
+            f"Silver output columns don't match WEATHER_SILVER_SCHEMA: "
+            f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
+        )
+    return df.select([F.col(f.name).cast(f.dataType) for f in schema.fields])

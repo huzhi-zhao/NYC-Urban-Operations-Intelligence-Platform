@@ -14,9 +14,11 @@ import pytest
 pyspark = pytest.importorskip("pyspark")
 
 from pyspark.sql import Row, SparkSession  # noqa: E402
+from pyspark.sql.types import DoubleType, StringType, StructField, StructType  # noqa: E402
 
 from spark.transforms.weather import (  # noqa: E402
     dedupe_by_freshness,
+    enforce_schema,
     normalize_timestamps,
     parse_ingest_date,
     split_by_validity,
@@ -86,3 +88,35 @@ def test_split_by_validity_rejects_out_of_range_and_null_timestamp(spark):
     assert rejected.count() == 2
     reasons = {row["_reject_reason"] for row in rejected.collect()}
     assert reasons == {"temperature_2m_out_of_range", "null_time_utc"}
+
+
+def test_enforce_schema_passes_through_matching_columns(spark):
+    schema = StructType(
+        [StructField("a", StringType(), True), StructField("b", DoubleType(), True)]
+    )
+    df = spark.createDataFrame([Row(b=1.0, a="x")])  # deliberately out of declared order
+    result = enforce_schema(df, schema)
+    assert result.columns == ["a", "b"]
+    assert result.collect() == [Row(a="x", b=1.0)]
+
+
+def test_enforce_schema_raises_on_missing_column():
+    schema = StructType(
+        [StructField("a", StringType(), True), StructField("b", DoubleType(), True)]
+    )
+
+    class _FakeDF:
+        columns = ["a"]
+
+    with pytest.raises(ValueError, match="missing=\\['b'\\]"):
+        enforce_schema(_FakeDF(), schema)
+
+
+def test_enforce_schema_raises_on_unexpected_column():
+    schema = StructType([StructField("a", StringType(), True)])
+
+    class _FakeDF:
+        columns = ["a", "extra"]
+
+    with pytest.raises(ValueError, match="unexpected=\\['extra'\\]"):
+        enforce_schema(_FakeDF(), schema)

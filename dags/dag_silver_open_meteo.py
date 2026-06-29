@@ -27,6 +27,7 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 GCS_KEY_PATH = "/opt/airflow/keys/nyc-uoip-sa-key.json"
 GCS_CONNECTOR_PACKAGE = "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.21"
+LOOKBACK_DAYS = 7  # absorbs late forecast revisions, matches etl_open_meteo.py's daily-call window
 
 SPARK_CONF = {
     "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
@@ -63,8 +64,12 @@ with DAG(
             # data_interval_start is the previous schedule period's start, i.e.
             # "yesterday" relative to this run's trigger day — matches the
             # get_yesterday() convention used by dag_ingest_open_meteo.
-            "--execution-date",
-            "{{ data_interval_start.date().isoformat() }}",
+            # Window is [start, end) = the last LOOKBACK_DAYS days ending at
+            # (and including) that "yesterday" date.
+            "--start",
+            "{{ (data_interval_start.date() - macros.timedelta(days=" + str(LOOKBACK_DAYS - 1) + ")).isoformat() }}",
+            "--end",
+            "{{ (data_interval_start.date() + macros.timedelta(days=1)).isoformat() }}",
         ],
         verbose=True,
         execution_timeout=timedelta(minutes=30),

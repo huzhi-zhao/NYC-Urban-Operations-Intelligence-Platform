@@ -1,0 +1,96 @@
+<svg viewBox="0 0 1120 1100" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Airflow + Spark + GCS to-Silver architecture and execution chain</title>
+<desc>Educational diagram showing component responsibilities (Airflow scheduler, Spark Driver, Spark Master, Spark Worker/Executor, GCS storage) and the numbered step-by-step execution chain of a Bronze-to-Silver job, generalized beyond any one dataset.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="rgb(110,110,105)"/>
+  </marker>
+</defs>
+
+<rect x="20" y="30" width="600" height="800" rx="14" fill="none" stroke="rgb(150,150,145)" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="40" y="55" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="rgb(100,100,95)">DOCKER 宿主机 · 同一个 network (bigdata-net)</text>
+
+<rect x="660" y="480" width="420" height="300" rx="14" fill="rgb(230,241,251)" stroke="rgb(24,95,165)" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="680" y="505" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="rgb(12,68,124)">GCS · 在 Docker 网络之外的云存储</text>
+
+<!-- Airflow box -->
+<rect x="60" y="80" width="520" height="120" rx="10" fill="rgb(243,243,242)" stroke="rgb(140,140,135)" stroke-width="1.2"/>
+<text x="80" y="108" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="rgb(30,30,28)">Airflow（调度层）</text>
+<text x="80" y="128" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(80,80,75)">职责：只管"什么时候、传什么参数"，从不碰一行数据</text>
+<text x="80" y="146" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 按 cron 定时触发 DAG</text>
+<text x="80" y="162" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 渲染参数（日期、bucket 等）</text>
+<text x="80" y="178" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 失败重试 / 告警，task 标红</text>
+
+<line x1="320" x2="320" y1="200" y2="235" stroke="rgb(110,110,105)" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="320" cy="217" r="13" fill="rgb(90,90,85)"/><text x="320" y="221" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="white">1</text>
+<text x="345" y="213" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="rgb(30,30,28)">子进程调用 spark-submit</text>
+<text x="345" y="227" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">同一个容器里 fork 一个命令行进程</text>
+
+<!-- Spark Driver box -->
+<rect x="90" y="240" width="460" height="110" rx="8" fill="rgb(250,250,249)" stroke="rgb(170,170,165)" stroke-width="1"/>
+<text x="110" y="266" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="rgb(30,30,28)">Spark Driver（跟 Airflow 同一容器）</text>
+<text x="110" y="285" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(80,80,75)">职责：把 Python 转换代码编译成"执行计划"</text>
+<text x="110" y="302" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 不直接处理数据，只做编排</text>
+<text x="110" y="318" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 向 Master 申请计算资源</text>
+
+<line x1="320" x2="320" y1="350" y2="395" stroke="rgb(110,110,105)" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="320" cy="375" r="13" fill="rgb(90,90,85)"/><text x="320" y="379" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="white">2</text>
+<text x="345" y="371" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="rgb(30,30,28)">注册作业，申请资源</text>
+<text x="345" y="385" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">容器名直连 :7077（容器DNS，不用SSH）</text>
+
+<!-- Spark Master -->
+<rect x="60" y="400" width="520" height="100" rx="10" fill="rgb(243,243,242)" stroke="rgb(140,140,135)" stroke-width="1.2"/>
+<text x="80" y="428" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="rgb(30,30,28)">Spark Master（资源协调者）</text>
+<text x="80" y="448" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(80,80,75)">职责：决定"谁来干活"，自己不执行任务</text>
+<text x="80" y="465" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 接收 Driver 的资源申请</text>
+<text x="80" y="481" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">• 指派 Worker 拉起 Executor 进程</text>
+
+<line x1="320" x2="320" y1="500" y2="545" stroke="rgb(110,110,105)" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="320" cy="525" r="13" fill="rgb(90,90,85)"/><text x="320" y="529" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="white">3</text>
+<text x="345" y="521" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="rgb(30,30,28)">拉起 Executor 进程</text>
+<text x="345" y="535" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">GCS connector jar 这时自动分发给它</text>
+
+<!-- Spark Worker / Executor -->
+<rect x="60" y="550" width="520" height="260" rx="10" fill="rgb(243,243,242)" stroke="rgb(140,140,135)" stroke-width="1.2"/>
+<text x="80" y="580" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="rgb(30,30,28)">Spark Worker / Executor（真正干活的人）</text>
+<text x="80" y="600" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(80,80,75)">职责：所有"读、算、写"都发生在这里</text>
+
+<rect x="90" y="615" width="460" height="50" rx="8" fill="rgb(250,250,249)" stroke="rgb(170,170,165)" stroke-width="1"/>
+<text x="110" y="636" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(60,60,55)">④ 并行读取原始数据（→ 见右侧 GCS Bronze）</text>
+<text x="110" y="652" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">认证靠挂载的 service-account key 文件</text>
+
+<rect x="90" y="675" width="460" height="50" rx="8" fill="rgb(250,250,249)" stroke="rgb(170,170,165)" stroke-width="1"/>
+<text x="110" y="696" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(60,60,55)">⑤ 在内存里清洗转换（去重 / 标准化 / 校验）</text>
+<text x="110" y="712" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">这一步不经过 GCS，纯内存计算，最快</text>
+
+<rect x="90" y="735" width="460" height="50" rx="8" fill="rgb(250,250,249)" stroke="rgb(170,170,165)" stroke-width="1"/>
+<text x="110" y="756" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(60,60,55)">⑥ 写出清洗后的数据（→ 见右侧 GCS Silver）</text>
+<text x="110" y="772" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="rgb(110,110,105)">同一份 key，写之前也要先认证</text>
+
+<text x="80" y="805" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">⑦ 执行结果（行数等）回传给 Driver → Airflow，行数不足基线则任务标红/重试</text>
+
+<!-- arrows into GCS -->
+<line x1="580" x2="655" y1="640" y2="560" stroke="rgb(110,110,105)" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="655" x2="580" y1="700" y2="760" stroke="rgb(110,110,105)" stroke-width="2" marker-end="url(#arrow)"/>
+
+<!-- GCS Bronze -->
+<rect x="700" y="530" width="340" height="90" rx="10" fill="rgb(225,245,238)" stroke="rgb(15,110,86)" stroke-width="1.2"/>
+<text x="720" y="558" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="rgb(8,80,65)">GCS · Bronze</text>
+<text x="720" y="578" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(15,110,86)">职责：存最原始、不可改的数据</text>
+<text x="720" y="595" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(15,110,86)">只读，不参与任何计算</text>
+
+<!-- GCS Silver -->
+<rect x="700" y="650" width="340" height="90" rx="10" fill="rgb(230,241,251)" stroke="rgb(24,95,165)" stroke-width="1.2"/>
+<text x="720" y="678" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="rgb(12,68,124)">GCS · Silver</text>
+<text x="720" y="698" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="rgb(24,95,165)">职责：存清洗后、可直接被下游查询的数据</text>
+<text x="720" y="715" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(24,95,165)">按分区覆盖写，保证重跑幂等</text>
+
+<!-- legend -->
+<rect x="700" y="800" width="18" height="18" rx="3" fill="rgb(243,243,242)" stroke="rgb(140,140,135)"/>
+<text x="726" y="814" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">灰色 = 计算/调度组件（都在 Docker 容器里）</text>
+<rect x="700" y="826" width="18" height="18" rx="3" fill="rgb(230,241,251)" stroke="rgb(24,95,165)"/>
+<text x="726" y="840" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">蓝色 = 存储层（GCS，独立于 Docker 之外）</text>
+
+<text x="40" y="980" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="rgb(100,100,95)">这套架构能跑通任何"Airflow 调度 + Spark 处理 + 云存储落地"的 Bronze→Silver 任务，</text>
+<text x="40" y="1000" font-family="Helvetica, Arial, sans-serif" font-size="11.5" fill="rgb(100,100,95)">不只是天气数据——具体跑的是哪个数据集，只取决于 Driver 提交的是哪个 job 脚本。</text>
+</svg>
