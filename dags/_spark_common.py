@@ -9,7 +9,7 @@ from __future__ import annotations
 
 GCS_KEY_PATH = "/opt/airflow/keys/nyc-uoip-sa-key.json"
 
-# Use the Google-published SHADED connector jar via --jars, not --packages.
+# Use the SHADED connector jar via --jars, not --packages.
 # --packages pulls the unshaded artifact plus ~90 transitive deps (Guava,
 # gRPC, protobuf, ...) whose versions collide with the versions already
 # bundled in Spark's own Hadoop client on the classpath — manifests as
@@ -17,7 +17,13 @@ GCS_KEY_PATH = "/opt/airflow/keys/nyc-uoip-sa-key.json"
 # .checkState(boolean, String, long)' at runtime. The shaded jar relocates
 # all of those dependencies under its own package namespace, so it can't
 # collide with anything already on the classpath.
-GCS_CONNECTOR_JAR = "https://storage.googleapis.com/hadoop-lib/gcs/gcs-connector-hadoop3-2.2.21-shaded.jar"
+#
+# Served from Maven Central (the legacy storage.googleapis.com/hadoop-lib
+# mirror Google used to publish this under has been taken down — 404s now).
+GCS_CONNECTOR_JAR = (
+    "https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/"
+    "gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar"
+)
 
 SPARK_CONF = {
     "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",

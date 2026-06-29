@@ -49,7 +49,7 @@
 1. **Airflow 触发 + 渲染参数**：DAG（[dags/dag_silver_open_meteo.py](../../../dags/dag_silver_open_meteo.py)）到点触发，`SparkSubmitOperator` 把 Jinja 模板（执行日期、bucket）渲染成具体值，在 `airflow-scheduler` 容器里 fork 一个子进程执行：
    ```bash
    spark-submit --master spark://spark-master:7077 --deploy-mode client \
-                --jars https://storage.googleapis.com/hadoop-lib/gcs/gcs-connector-hadoop3-2.2.21-shaded.jar \
+                --jars https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar \
                 --conf spark.hadoop.google.cloud.auth.service.account.json.keyfile=/opt/airflow/keys/nyc-uoip-sa-key.json \
                 /opt/airflow/plugins/spark/jobs/etl_open_meteo.py --bucket <bucket> --execution-date <date>
    ```
