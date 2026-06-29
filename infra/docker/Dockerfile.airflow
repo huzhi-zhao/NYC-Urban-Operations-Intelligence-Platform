@@ -1,0 +1,30 @@
+# Airflow image extended with a JVM + Spark client so SparkSubmitOperator
+# can submit jobs to the standalone Spark cluster (spark-master:7077) already
+# running on this host, in the same `bigdata-net` Docker network.
+#
+# pyspark==3.5.1 must match the Spark cluster's version (apache/spark:3.5.1)
+# — mismatched client/cluster versions fail at the protocol level, not with
+# a clear error message.
+
+FROM apache/airflow:3.2.2-python3.11
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+USER airflow
+
+RUN pip install --no-cache-dir \
+    pydantic>=2.0 \
+    pyyaml \
+    requests \
+    python-dotenv \
+    google-cloud-storage \
+    apache-airflow-providers-fab \
+    apache-airflow-providers-apache-spark \
+    pyspark==3.5.1
+
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV SPARK_HOME=/home/airflow/.local/lib/python3.11/site-packages/pyspark
+ENV PATH="${SPARK_HOME}/bin:${PATH}"

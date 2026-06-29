@@ -4,7 +4,7 @@
 
 在 `explore` dataset 里，每个数据源建一张外部表：
 
-```sql
+```
 -- 311
 CREATE OR REPLACE EXTERNAL TABLE `pace-lab-bdp.explore.raw_nyc_311`
 OPTIONS (format = 'NEWLINE_DELIMITED_JSON',

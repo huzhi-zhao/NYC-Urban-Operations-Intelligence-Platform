@@ -1,10 +1,21 @@
 version: '3.8'
 
-# Phase 1 Airflow stack — schedules backfill DAGs that upload to GCS.
-# Spark/Trino/MinIO are Phase 2 and not included here.
+# Phase 1 Airflow stack — schedules backfill/ingest DAGs that read/write GCS,
+# and now submits Silver Spark jobs to the standalone Spark cluster
+# (spark-master:7077), defined below in the same file/network. Storage stays
+# on GCS; only the compute engine moved off Dataproc.
+#
+# spark-master/spark-worker were previously started from a separate
+# standalone compose file (/opt/pace_lab/spark/docker-compose.yml on the
+# Ubuntu host) — stop that stack before bringing this one up, since both
+# define containers named spark-master/spark-worker on the same external
+# bigdata-net network and the names will collide otherwise:
+#   docker compose -f /opt/pace_lab/spark/docker-compose.yml down
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:3.2.2-python3.11
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
   env_file:
     - ../../.env
   networks:
@@ -20,11 +31,15 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: 'nyc-uoip-jwt-secret-change-me'
     AIRFLOW__API_AUTH__JWT_ISSUER: 'airflow'
     PYTHONPATH: /opt/airflow/plugins
+    # Spark connection consumed by SparkSubmitOperator(conn_id="spark_default").
+    # spark-master must already be reachable by container name on bigdata-net.
+    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://spark-master:7077?deploy-mode=client'
   volumes:
     - ../../dags:/opt/airflow/dags
     - ../../ingestion:/opt/airflow/plugins/ingestion
     - ../../scripts:/opt/airflow/plugins/scripts
     - ../../config:/opt/airflow/plugins/config
+    - ../../spark:/opt/airflow/plugins/spark
     - ../../infra/terraform/keys:/opt/airflow/keys:ro
     - airflow-logs:/opt/airflow/logs
   depends_on:
@@ -53,7 +68,6 @@ services:
     <<: *airflow-common
     command: >
       bash -c "
-        pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage apache-airflow-providers-fab &&
         airflow db migrate &&
         airflow users create --username admin --password zc1992 --firstname NYC --lastname UOIP --role Admin --email admin@nyc-uoip.local
       "
@@ -61,11 +75,7 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
-    command: >
-      bash -c "
-        pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage apache-airflow-providers-fab &&
-        airflow api-server
-      "
+    command: airflow api-server
     ports:
       - "28080:8080"
     healthcheck:
@@ -76,11 +86,7 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
-    command: >
-      bash -c "
-        pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage apache-airflow-providers-fab &&
-        airflow scheduler
-      "
+    command: airflow scheduler
     healthcheck:
       test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--limit", "1"]
       interval: 30s
@@ -89,11 +95,39 @@ services:
 
   airflow-dag-processor:
     <<: *airflow-common
+    command: airflow dag-processor
+
+  spark-master:
+    image: apache/spark:3.5.1
+    container_name: spark-master
     command: >
-      bash -c "
-        pip install --no-cache-dir pydantic>=2.0 pyyaml requests python-dotenv google-cloud-storage apache-airflow-providers-fab &&
-        airflow dag-processor
-      "
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    networks:
+      - bigdata-net
+    restart: unless-stopped
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+    volumes:
+      # Same GCS service-account key Airflow uses — executors need it to
+      # read/write gs:// directly. Path must match the
+      # spark.hadoop.google.cloud.auth.service.account.json.keyfile conf
+      # set in dags/dag_silver_open_meteo.py.
+      - ../../infra/terraform/keys/nyc-uoip-sa-key.json:/opt/airflow/keys/nyc-uoip-sa-key.json:ro
+    networks:
+      - bigdata-net
+    restart: unless-stopped
 
 volumes:
   postgres-db:
