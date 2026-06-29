@@ -22,18 +22,11 @@ from __future__ import annotations
 from datetime import timedelta
 
 from _dag_common import DEFAULT_ARGS, get_bucket
+from _spark_common import GCS_CONNECTOR_PACKAGE, SPARK_CONF
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
-GCS_KEY_PATH = "/opt/airflow/keys/nyc-uoip-sa-key.json"
-GCS_CONNECTOR_PACKAGE = "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.21"
 LOOKBACK_DAYS = 7  # absorbs late forecast revisions, matches etl_open_meteo.py's daily-call window
-
-SPARK_CONF = {
-    "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
-    "spark.hadoop.fs.AbstractFileSystem.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS",
-    "spark.hadoop.google.cloud.auth.service.account.json.keyfile": GCS_KEY_PATH,
-}
 
 try:
     _DEFAULT_BUCKET = get_bucket({})
