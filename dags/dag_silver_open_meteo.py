@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from _dag_common import DEFAULT_ARGS, get_bucket
-from _spark_common import GCS_CONNECTOR_PACKAGE, SPARK_CONF
+from _spark_common import GCS_CONNECTOR_JAR, SPARK_CONF
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
@@ -49,7 +49,7 @@ with DAG(
         task_id="run_silver_etl",
         application="/opt/airflow/plugins/spark/jobs/etl_open_meteo.py",
         conn_id="spark_default",
-        packages=GCS_CONNECTOR_PACKAGE,
+        jars=GCS_CONNECTOR_JAR,
         conf=SPARK_CONF,
         application_args=[
             "--bucket",

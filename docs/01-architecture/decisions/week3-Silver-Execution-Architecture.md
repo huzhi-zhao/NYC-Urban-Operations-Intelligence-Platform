@@ -49,12 +49,16 @@
 1. **Airflow 触发 + 渲染参数**：DAG（[dags/dag_silver_open_meteo.py](../../../dags/dag_silver_open_meteo.py)）到点触发，`SparkSubmitOperator` 把 Jinja 模板（执行日期、bucket）渲染成具体值，在 `airflow-scheduler` 容器里 fork 一个子进程执行：
    ```bash
    spark-submit --master spark://spark-master:7077 --deploy-mode client \
-                --packages com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.21 \
+                --jars https://storage.googleapis.com/hadoop-lib/gcs/gcs-connector-hadoop3-2.2.21-shaded.jar \
                 --conf spark.hadoop.google.cloud.auth.service.account.json.keyfile=/opt/airflow/keys/nyc-uoip-sa-key.json \
                 /opt/airflow/plugins/spark/jobs/etl_open_meteo.py --bucket <bucket> --execution-date <date>
    ```
 2. **Driver 向 Master 注册，申请资源**：这个子进程就是 Driver，通过 `bigdata-net` 这个 Docker network，靠容器名 `spark-master` 直接解析到 IP，走 TCP 7077 — **不需要 SSH，不需要暴露宿主机端口**，纯粹是同一个 Docker network 里的容器间通信。
-3. **Master 在 Worker 上拉起 Executor**：`--packages` 声明的 GCS connector jar 会在这一步通过 Ivy 自动下载、分发给 Executor，不需要预先把 jar 放进 `spark-worker` 镜像里。
+3. **Master 在 Worker 上拉起 Executor**：`--jars` 指定的 GCS connector jar 会在这一步分发给 Executor。
+
+   > **踩坑记录**：最初用的是 `--packages com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.21`（未 shade 版本）。这个写法会拉一整套自己的传递依赖（Guava 32.1.2、gRPC、protobuf 等近 90 个 jar），版本跟 Spark 自带的 Hadoop client 内置的旧版 Guava 冲突，运行时报
+   > `java.lang.NoSuchMethodError: 'void com.google.common.base.Preconditions.checkState(boolean, java.lang.String, long)'`。
+   > 解法是换成 Google 官方发布的**已 shade**（所有依赖被重定位到自己的包名下，不会跟 classpath 上任何已有的库冲突）的 fat jar，用 `--jars` 而不是 `--packages` 引入——见 [dags/_spark_common.py](../../../dags/_spark_common.py) 里的 `GCS_CONNECTOR_JAR`。
 4. **Executor 并行读 Bronze**：`spark.read.schema(WEATHER_RAW_SCHEMA).json(paths)`（[etl_open_meteo.py](../../../spark/jobs/etl_open_meteo.py)）——这一步发生在 `spark-worker` 容器里，靠挂载进容器的 service-account key 完成 GCS 认证。
 5. **内存中清洗转换**：[spark/transforms/weather.py](../../../spark/transforms/weather.py) 里的 `dedupe_by_freshness`（去重）→ `normalize_timestamps`（时区转 UTC）→ `split_by_validity`（范围校验）→ `enforce_schema`（强制对齐 `WEATHER_SILVER_SCHEMA`）。这些全部是 DataFrame 算子（`F.col`/`Window`），不是 Python UDF，所以会被编译进 Spark 执行计划本身，Executor 不需要额外 import 任何项目代码。
 6. **写出 Silver**：`valid.write.partitionBy("date").mode("overwrite")...parquet(...)`，`partitionOverwriteMode=dynamic` 只覆盖涉及的分区，保证同一个 `execution_date` 重跑是幂等的。
