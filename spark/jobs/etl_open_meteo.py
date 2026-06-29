@@ -77,7 +77,7 @@ def run(spark: SparkSession, bucket: str, start: date, end: date) -> None:
         .withColumn("_source_file", F.input_file_name())
     )
 
-    raw = parse_ingest_date(raw)
+    raw = parse_ingest_date(raw).drop("_source_file")
     deduped = dedupe_by_freshness(raw)
     normalized = normalize_timestamps(deduped, source_id=SOURCE_ID)
     valid, rejected = split_by_validity(normalized)
