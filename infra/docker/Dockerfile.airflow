@@ -10,9 +10,15 @@ FROM apache/airflow:3.2.2-python3.11
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+    && apt-get install -y --no-install-recommends openjdk-17-jre-headless procps \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # openjdk-17-jre-headless doesn't create the /usr/lib/jvm/default-java
+    # symlink (that's only provided by the default-jre/default-jdk meta
+    # packages) — compute the real install path from `java` on PATH and
+    # symlink it ourselves so JAVA_HOME below is stable across architectures
+    # (arm64 vs amd64 ship different directory names under /usr/lib/jvm/).
+    && ln -sfT "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /usr/lib/jvm/default-java
 USER airflow
 
 RUN pip install --no-cache-dir \

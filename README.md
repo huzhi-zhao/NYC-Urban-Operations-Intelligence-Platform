@@ -98,6 +98,8 @@ make spark-submit JOB=spark/jobs/etl_nyc_311.py
 
 # Bring up Phase 2 Docker stack
 docker compose -f infra/docker/docker-compose.yml up -d
+# only restart airflow
+docker compose -f infra/docker/docker-compose.yml restart airflow-scheduler airflow-webserver airflow-dag-processor
 ```
 
 ### Key Conventions
