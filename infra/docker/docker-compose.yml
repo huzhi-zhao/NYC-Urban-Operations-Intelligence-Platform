@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Phase 1 Airflow stack — schedules backfill/ingest DAGs that read/write GCS,
 # and now submits Silver Spark jobs to the standalone Spark cluster
 # (spark-master:7077), defined below in the same file/network. Storage stays
@@ -104,10 +102,15 @@ services:
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.master.Master
     environment:
-      # Spark UI otherwise advertises the container's bigdata-net IP for
-      # links (e.g. worker URLs). Override with the externally reachable
-      # hostname so links resolve outside the docker network.
-      SPARK_PUBLIC_DNS: spark.jimmypink.dpdns.org
+      # Master/Worker normally hardcode http://<host>:<webUiPort> links,
+      # which breaks behind the nginx https reverse proxy (wrong scheme,
+      # wrong port, and the worker isn't even publicly exposed). Enabling
+      # Spark's own reverse-proxy mode makes the Master UI link to workers
+      # via relative paths under its own host (/proxy/<worker-id>/) and
+      # forward the request server-side instead of redirecting the browser.
+      SPARK_MASTER_OPTS: >-
+        -Dspark.ui.reverseProxy=true
+        -Dspark.ui.reverseProxyUrl=https://spark.jimmypink.dpdns.org
     ports:
       - "8080:8080"
       - "7077:7077"
@@ -127,11 +130,11 @@ services:
       org.apache.spark.deploy.worker.Worker
       spark://spark-master:7077
     environment:
-      # Worker UI is proxied on its own subdomain (host port 8081 is taken
-      # by Flink's dashboard) — see infra/docker/nginx/pace_big_data.conf.
-      SPARK_PUBLIC_DNS: spark-worker.jimmypink.dpdns.org
-    ports:
-      - "8082:8081"
+      # Must match spark-master's reverseProxy setting — the worker also
+      # needs to know it's served via the master's proxy path, not its own
+      # host:port. No public port mapping needed: the worker UI is only
+      # reached internally, via the master's proxy, over bigdata-net.
+      SPARK_WORKER_OPTS: -Dspark.ui.reverseProxy=true
     volumes:
       # Same GCS service-account key Airflow uses — executors need it to
       # read/write gs:// directly. Path must match the
