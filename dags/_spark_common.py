@@ -29,24 +29,29 @@ SPARK_CONF = {
     "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
     "spark.hadoop.fs.AbstractFileSystem.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS",
     "spark.hadoop.google.cloud.auth.service.account.json.keyfile": GCS_KEY_PATH,
-    # Force the Executor's Python interpreter explicitly via --conf rather than
-    # relying on the spark-worker container's PYSPARK_PYTHON env var: the
-    # apache/spark base image's own startup scripts can re-set/shadow
-    # PYSPARK_PYTHON when spark-class launches, so a Dockerfile ENV alone isn't
-    # reliably inherited by the forked Executor process. This was the cause of
-    # PYSPARK_VERSION_MISMATCH (worker 3.8 vs driver 3.11) persisting even
-    # after installing Python 3.11 in Dockerfile.spark-worker — see
-    # docs/01-architecture/decisions/week3-Silver-Execution-Architecture.md §7.
+    # PYTHON_VERSION_MISMATCH (worker 3.8 vs driver 3.11) fix.
     #
-    # IMPORTANT: use spark.executorEnv.PYSPARK_PYTHON only, NOT
-    # spark.pyspark.python — the latter also overrides the Driver's
-    # interpreter (PythonRunner runs the user script with it), and the Driver
-    # process lives in airflow-scheduler, which doesn't have
+    # spark.executorEnv.PYSPARK_PYTHON alone does NOT work: it only injects an
+    # OS env var into the Executor JVM's own process environment. The actual
+    # command used to spawn the Python worker subprocess (`pythonExec`) is a
+    # literal string embedded by the Driver into the serialized UDF closure
+    # at build time (from spark.pyspark.python / PYSPARK_PYTHON, default
+    # "python3") and shipped to the Executor as-is — the Executor's local env
+    # vars never come into play. Since the Driver (airflow-scheduler) never
+    # set PYSPARK_PYTHON, the embedded value defaulted to bare "python3",
+    # which resolves on the spark-worker container's PATH to the base image's
+    # Ubuntu Focal Python 3.8.
+    #
+    # spark.pyspark.python sets that embedded value correctly for the
+    # Executor, but it also governs the Driver's own interpreter unless
+    # overridden — and the Driver (airflow-scheduler) doesn't have
     # /usr/local/bin/python3.11 (that path only exists in the spark-worker
-    # image). Setting spark.pyspark.python broke the Driver with
-    # "Cannot run program /usr/local/bin/python3.11: No such file".
+    # image), which broke the Driver with "Cannot run program
+    # /usr/local/bin/python3.11: No such file". spark.pyspark.driver.python
+    # overrides it back to a path that exists in airflow-scheduler.
     #
-    # Harmless for jobs with no Python UDFs (e.g. weather): this conf is only
-    # consulted when a Python worker subprocess actually gets spawned.
-    "spark.executorEnv.PYSPARK_PYTHON": "/usr/local/bin/python3.11",
+    # Harmless for jobs with no Python UDFs (e.g. weather): these confs are
+    # only consulted when a Python worker subprocess actually gets spawned.
+    "spark.pyspark.python": "/usr/local/bin/python3.11",
+    "spark.pyspark.driver.python": "python3",
 }
