@@ -141,6 +141,14 @@ services:
       # spark.hadoop.google.cloud.auth.service.account.json.keyfile conf
       # set in dags/dag_silver_open_meteo.py.
       - ../../infra/terraform/keys/nyc-uoip-sa-key.json:/opt/airflow/keys/nyc-uoip-sa-key.json:ro
+      # Module-reference UDFs (e.g. spark/transforms/dcp.py's geojson_to_wkt_udf)
+      # get cloudpickled by qualified name ("spark.transforms.dcp.<func>"), not
+      # by value — the Executor's Python worker subprocess has to `import spark`
+      # to resolve them at deserialize time. Mount at the same path Airflow uses
+      # (/opt/airflow/plugins/spark) so the qualified name resolves identically
+      # on both sides; paired with spark.executorEnv.PYTHONPATH in
+      # dags/_spark_common.py.
+      - ../../spark:/opt/airflow/plugins/spark:ro
     networks:
       - bigdata-net
     restart: unless-stopped
