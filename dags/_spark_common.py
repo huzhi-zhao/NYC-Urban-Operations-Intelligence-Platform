@@ -37,8 +37,16 @@ SPARK_CONF = {
     # PYSPARK_VERSION_MISMATCH (worker 3.8 vs driver 3.11) persisting even
     # after installing Python 3.11 in Dockerfile.spark-worker — see
     # docs/01-architecture/decisions/week3-Silver-Execution-Architecture.md §7.
+    #
+    # IMPORTANT: use spark.executorEnv.PYSPARK_PYTHON only, NOT
+    # spark.pyspark.python — the latter also overrides the Driver's
+    # interpreter (PythonRunner runs the user script with it), and the Driver
+    # process lives in airflow-scheduler, which doesn't have
+    # /usr/local/bin/python3.11 (that path only exists in the spark-worker
+    # image). Setting spark.pyspark.python broke the Driver with
+    # "Cannot run program /usr/local/bin/python3.11: No such file".
+    #
     # Harmless for jobs with no Python UDFs (e.g. weather): this conf is only
     # consulted when a Python worker subprocess actually gets spawned.
-    "spark.pyspark.python": "/usr/local/bin/python3.11",
     "spark.executorEnv.PYSPARK_PYTHON": "/usr/local/bin/python3.11",
 }

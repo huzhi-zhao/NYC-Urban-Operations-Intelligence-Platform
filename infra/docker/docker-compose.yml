@@ -103,6 +103,11 @@ services:
     command: >
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.master.Master
+    environment:
+      # Spark UI otherwise advertises the container's bigdata-net IP for
+      # links (e.g. worker URLs). Override with the externally reachable
+      # hostname so links resolve outside the docker network.
+      SPARK_PUBLIC_DNS: spark.jimmypink.dpdns.org
     ports:
       - "8080:8080"
       - "7077:7077"
@@ -121,6 +126,12 @@ services:
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.worker.Worker
       spark://spark-master:7077
+    environment:
+      # Worker UI is proxied on its own subdomain (host port 8081 is taken
+      # by Flink's dashboard) — see infra/docker/nginx/pace_big_data.conf.
+      SPARK_PUBLIC_DNS: spark-worker.jimmypink.dpdns.org
+    ports:
+      - "8082:8081"
     volumes:
       # Same GCS service-account key Airflow uses — executors need it to
       # read/write gs:// directly. Path must match the
