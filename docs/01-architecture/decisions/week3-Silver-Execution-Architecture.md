@@ -109,3 +109,31 @@ spark-submit spark/jobs/etl_open_meteo.py \
 这跟 Bronze 层的 `scripts/backfill/`（`schedule=None`，手动传 `--start`/`--end`）是同一个设计哲学，只是 Silver 层目前没有单独建一套 `scripts/backfill/` 风格的 CLI 包装——`spark/jobs/etl_open_meteo.py` 本身的 `--start`/`--end` 参数就承担了这个角色，不需要额外一层脚本。
 
 注意：Airflow 那条日增量调度链路（`catchup=True`）跟"一次性全量回填"是两件不同的事——`catchup=True` 只是把"过去每一天都自动补跑一次"，每次补跑依然是同一个 7 天滑动窗口，不会自动变成一次性扫全部历史；要做全量回填，必须手动用宽 `--start`/`--end` 调一次 `spark-submit`，不经过 DAG。
+
+---
+
+## 7. SRC-DCP（Borough 边界）Silver 层设计决策
+
+### 7.1 只需全量覆盖，无增量管道
+
+Borough 边界几十年不变，不需要增量 DAG。设计：
+
+```
+Bronze static NDJSON → 手动跑一次 etl_dcp.py → Silver Parquet（5行）
+```
+
+未来边界更新时：重新 backfill Bronze → 重跑 `etl_dcp.py` 全量覆盖，`mode("overwrite")` 即可。
+
+### 7.2 几何体坐标存为 GeoJSON string
+
+Raw data 的 `the_geom` 是 MultiPolygon（WGS84 lon/lat），Queens 最多约 36,000 个顶点，整行 JSON 几百 KB。
+
+**选择**：直接 `F.to_json(F.col("the_geom"))` 存为 `geometry_geojson STRING`，不引入 Shapely。
+
+下游 BigQuery 用 `ST_GEOGFROMGEOJSON(geometry_geojson)` 即可，无需 WKT 转换。
+
+**不分区，`coalesce(1)`**：5 行静态数据，单文件写出，`mode("overwrite")` 全量覆盖。
+
+### 7.3 执行引擎：Docker Spark（同 weather）
+
+Dataproc 节点注册失败率高，即使在 GCP 平台也改用 Ubuntu 自建 Docker Spark（`spark-master`/`spark-worker`）。存储层（GCS Bronze/Silver）不变，只换计算引擎。详见本文第 4 节。
