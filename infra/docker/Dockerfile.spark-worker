@@ -1,16 +1,49 @@
-# Spark Worker with Shapely for DCP geometry UDF (GeoJSON -> WKT conversion).
+# Spark Worker with Python 3.11 + Shapely for the DCP geometry UDF.
 #
-# The base apache/spark:3.5.1 image ships Python 3 but no pip packages beyond
-# the stdlib. Python UDFs are serialised by the Driver and executed inside the
-# Executor process on this container, so any library a UDF imports must be
-# installed here — Shapely being the only non-stdlib dependency we use.
+# Two problems this fixes, in order of discovery:
 #
-# Version must stay pinned to 3.5.1 to match the spark-master image and the
-# pyspark==3.5.1 client installed in Dockerfile.airflow (protocol mismatch
-# between client and cluster produces cryptic errors, not a clear version error).
+# 1. Shapely missing: DCP's GeoJSON -> WKT conversion runs as a Python UDF
+#    (spark/transforms/dcp.py). UDF bodies are serialised by the Driver and
+#    executed inside the Executor process on this container, so any library
+#    a UDF imports must be installed here.
+#
+# 2. PYTHON_VERSION_MISMATCH: the base apache/spark:3.5.1 image ships
+#    Python 3.8. The Driver runs inside airflow-scheduler
+#    (apache/airflow:3.2.2-python3.11 — see Dockerfile.airflow), i.e.
+#    Python 3.11. PySpark refuses to run a UDF when Driver and Executor
+#    Python *minor* versions differ:
+#       PySparkRuntimeError: [PYTHON_VERSION_MISMATCH] Python in worker has
+#       different version (3, 8) than that in driver 3.11
+#    This was always latent — it only surfaces once a job actually uses a
+#    Python UDF (weather's transforms are pure Catalyst DataFrame ops with
+#    no UDFs, so no Python worker process ever started, so the mismatch
+#    never got checked).
+#
+# Fix: install Python 3.11 via deadsnakes PPA (apache/spark:3.5.1 is
+# Ubuntu Jammy-based, which deadsnakes supports) and point
+# PYSPARK_PYTHON/PYSPARK_DRIVER_PYTHON at it explicitly so the Executor
+# doesn't fall back to the image's default python3 (3.8).
+#
+# Spark version must stay pinned to 3.5.1 to match the spark-master image
+# and the pyspark==3.5.1 client installed in Dockerfile.airflow — mismatched
+# client/cluster Spark versions fail at the protocol level with a much less
+# obvious error than the Python version check above.
 
 FROM apache/spark:3.5.1
 
 USER root
-RUN pip install --no-cache-dir shapely>=2.0.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common gnupg curl ca-certificates \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3.11 python3.11-distutils \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
+    && python3.11 -m pip install --no-cache-dir shapely>=2.0.0 \
+    && apt-get purge -y software-properties-common gnupg \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 USER spark
+
+ENV PYSPARK_PYTHON=/usr/bin/python3.11
+ENV PYSPARK_DRIVER_PYTHON=/usr/bin/python3.11
