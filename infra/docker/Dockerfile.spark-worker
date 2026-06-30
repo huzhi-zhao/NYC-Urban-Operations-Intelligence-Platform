@@ -7,11 +7,11 @@
 #    executed inside the Executor process on this container, so any library
 #    a UDF imports must be installed here.
 #
-# 2. PYTHON_VERSION_MISMATCH: the base apache/spark:3.5.1 image ships
-#    Python 3.8. The Driver runs inside airflow-scheduler
-#    (apache/airflow:3.2.2-python3.11 — see Dockerfile.airflow), i.e.
-#    Python 3.11. PySpark refuses to run a UDF when Driver and Executor
-#    Python *minor* versions differ:
+# 2. PYTHON_VERSION_MISMATCH: the base apache/spark:3.5.1 image is Ubuntu
+#    20.04 (focal) and ships Python 3.8. The Driver runs inside
+#    airflow-scheduler (apache/airflow:3.2.2-python3.11 — see
+#    Dockerfile.airflow), i.e. Python 3.11. PySpark refuses to run a UDF
+#    when Driver and Executor Python *minor* versions differ:
 #       PySparkRuntimeError: [PYTHON_VERSION_MISMATCH] Python in worker has
 #       different version (3, 8) than that in driver 3.11
 #    This was always latent — it only surfaces once a job actually uses a
@@ -19,10 +19,12 @@
 #    no UDFs, so no Python worker process ever started, so the mismatch
 #    never got checked).
 #
-# Fix: install Python 3.11 via deadsnakes PPA (apache/spark:3.5.1 is
-# Ubuntu Jammy-based, which deadsnakes supports) and point
-# PYSPARK_PYTHON/PYSPARK_DRIVER_PYTHON at it explicitly so the Executor
-# doesn't fall back to the image's default python3 (3.8).
+# Why build from source instead of deadsnakes PPA: this host is arm64
+# (Oracle Ampere). deadsnakes only publishes amd64 packages for Ubuntu
+# focal — `apt-get install python3.11` resolves the PPA's Release file
+# fine but then reports "Unable to locate package python3.11" because
+# there's no arm64 .deb in the repo. Building from source sidesteps the
+# missing-binary problem entirely and works on any architecture.
 #
 # Spark version must stay pinned to 3.5.1 to match the spark-master image
 # and the pyspark==3.5.1 client installed in Dockerfile.airflow — mismatched
@@ -33,17 +35,26 @@ FROM apache/spark:3.5.1
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common gnupg curl ca-certificates \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends python3.11 python3.11-distutils \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
-    && python3.11 -m pip install --no-cache-dir shapely>=2.0.0 \
-    && apt-get purge -y software-properties-common gnupg \
+    && apt-get install -y --no-install-recommends \
+        build-essential zlib1g-dev libffi-dev libssl-dev libbz2-dev \
+        libreadline-dev libsqlite3-dev liblzma-dev libncurses5-dev \
+        wget ca-certificates \
+    && wget -q https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz \
+    && tar -xzf Python-3.11.9.tgz \
+    && cd Python-3.11.9 \
+    && ./configure --enable-optimizations --quiet \
+    && make -j"$(nproc)" --silent \
+    && make altinstall --quiet \
+    && cd .. \
+    && rm -rf Python-3.11.9 Python-3.11.9.tgz \
+    && ln -sf /usr/local/bin/python3.11 /usr/bin/python3.11 \
+    && /usr/local/bin/python3.11 -m ensurepip --upgrade \
+    && /usr/local/bin/python3.11 -m pip install --no-cache-dir shapely>=2.0.0 \
+    && apt-get purge -y build-essential wget \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 USER spark
 
-ENV PYSPARK_PYTHON=/usr/bin/python3.11
-ENV PYSPARK_DRIVER_PYTHON=/usr/bin/python3.11
+ENV PYSPARK_PYTHON=/usr/local/bin/python3.11
+ENV PYSPARK_DRIVER_PYTHON=/usr/local/bin/python3.11
