@@ -29,4 +29,16 @@ SPARK_CONF = {
     "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
     "spark.hadoop.fs.AbstractFileSystem.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS",
     "spark.hadoop.google.cloud.auth.service.account.json.keyfile": GCS_KEY_PATH,
+    # Force the Executor's Python interpreter explicitly via --conf rather than
+    # relying on the spark-worker container's PYSPARK_PYTHON env var: the
+    # apache/spark base image's own startup scripts can re-set/shadow
+    # PYSPARK_PYTHON when spark-class launches, so a Dockerfile ENV alone isn't
+    # reliably inherited by the forked Executor process. This was the cause of
+    # PYSPARK_VERSION_MISMATCH (worker 3.8 vs driver 3.11) persisting even
+    # after installing Python 3.11 in Dockerfile.spark-worker — see
+    # docs/01-architecture/decisions/week3-Silver-Execution-Architecture.md §7.
+    # Harmless for jobs with no Python UDFs (e.g. weather): this conf is only
+    # consulted when a Python worker subprocess actually gets spawned.
+    "spark.pyspark.python": "/usr/local/bin/python3.11",
+    "spark.executorEnv.PYSPARK_PYTHON": "/usr/local/bin/python3.11",
 }
