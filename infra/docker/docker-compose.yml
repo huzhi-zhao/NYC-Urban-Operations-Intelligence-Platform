@@ -98,7 +98,7 @@ services:
     command: airflow dag-processor
 
   spark-master:
-    image: apache/spark:3.5.1
+    image: apache/spark:3.5.1  # master only coordinates — no UDFs run here
     container_name: spark-master
     command: >
       /opt/spark/bin/spark-class
@@ -111,7 +111,9 @@ services:
     restart: unless-stopped
 
   spark-worker:
-    image: apache/spark:3.5.1
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-worker
     container_name: spark-worker
     depends_on:
       - spark-master

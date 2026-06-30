@@ -1,0 +1,16 @@
+# Spark Worker with Shapely for DCP geometry UDF (GeoJSON -> WKT conversion).
+#
+# The base apache/spark:3.5.1 image ships Python 3 but no pip packages beyond
+# the stdlib. Python UDFs are serialised by the Driver and executed inside the
+# Executor process on this container, so any library a UDF imports must be
+# installed here — Shapely being the only non-stdlib dependency we use.
+#
+# Version must stay pinned to 3.5.1 to match the spark-master image and the
+# pyspark==3.5.1 client installed in Dockerfile.airflow (protocol mismatch
+# between client and cluster produces cryptic errors, not a clear version error).
+
+FROM apache/spark:3.5.1
+
+USER root
+RUN pip install --no-cache-dir shapely>=2.0.0
+USER spark
