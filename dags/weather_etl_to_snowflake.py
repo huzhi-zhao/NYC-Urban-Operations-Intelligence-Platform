@@ -11,9 +11,9 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 这是PACE课堂MINI Project作业
 """
 SNOWFLAKE_CONN_ID = "snowflake_default"
-STAGE_NAME = "weather_stage_af"
-RAW_TABLE = "weather_raw_af"
-CLEAN_TABLE = "weather_clean_af"
+STAGE_NAME = "weather_stage_q2"
+RAW_TABLE = "weather_raw_q2"
+CLEAN_TABLE = "weather_clean_q2"
 
 
 def extract(**context):
