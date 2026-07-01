@@ -125,6 +125,13 @@ services:
     # rather than something an Airflow task submits and waits on.
     image: apache/spark:3.5.1
     container_name: weather-stream-job
+    # apache/spark:3.5.1 defaults to a non-root `spark` user whose uid
+    # doesn't own or have read access to the bind-mounted GCS key on the
+    # host (java.io.FileNotFoundException: ... Permission denied, thrown
+    # from GoogleHadoopFileSystemBase reading the key at checkpoint-init
+    # time). Running as root sidesteps the uid mismatch without touching
+    # host file permissions — scoped to this one container only.
+    user: root
     env_file:
       - ../../.env
     volumes:
