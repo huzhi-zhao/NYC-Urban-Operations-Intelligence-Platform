@@ -136,14 +136,23 @@ services:
       # (spark/transforms, spark/schemas) — it doesn't today, kept for
       # consistency with the same mount path used on spark-worker.
       PYTHONPATH: /opt/spark-app
+    # spark-submit --packages resolves via Ivy, which needs to write its
+    # resolution cache under $HOME/.ivy2/cache — the apache/spark:3.5.1
+    # image's spark user HOME (/home/spark) doesn't have that directory
+    # pre-created, so the very first write fails with FileNotFoundException
+    # ("resolved-...xml (No such file or directory)"), and spark-submit
+    # exits before ever contacting spark-master. `sh -c` + `mkdir -p` first,
+    # then point spark.jars.ivy at that guaranteed-writable path.
     command: >
+      sh -c "mkdir -p /tmp/ivy2/cache &&
       /opt/spark/bin/spark-submit
       --master spark://spark-master:7077
       --deploy-mode client
       --conf spark.app.name=weather_kafka_to_snowflake
+      --conf spark.jars.ivy=/tmp/ivy2
       --jars https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar
       --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:2.16.0-spark_3.5,net.snowflake:snowflake-jdbc:3.16.1
-      spark/jobs/etl_weather_stream_to_snowflake.py
+      spark/jobs/etl_weather_stream_to_snowflake.py"
     networks:
       - bigdata-net
     depends_on:
