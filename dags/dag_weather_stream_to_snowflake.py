@@ -29,16 +29,86 @@ spark.conf.get().
 TARGET_SCHEMA overrides the connection's default schema so the stream lands
 in the Q3 schema (whether_q3) regardless of what the shared connection's
 default schema is set to.
+
+Dedup + monitoring: SparkSubmitOperator in cluster mode returns as soon as
+spark-submit hands the driver off — Airflow doesn't otherwise know or care
+whether the streaming job ends up actually running, and nothing stops you
+from triggering this DAG twice and getting two concurrent queries writing
+to the same Snowflake table. Two extra tasks close that gap by polling the
+Spark standalone master's own JSON status endpoint (no extra service to
+run — it's already exposed on spark-master:8080 for the web UI):
+  - check_not_already_running: before submitting, skip the whole run
+    (AirflowSkipException, not a failure) if APP_NAME is already an
+    active app or driver on the cluster.
+  - verify_job_running: after submitting, poll until APP_NAME shows up as
+    active, or fail the task if it never does within VERIFY_TIMEOUT_SECONDS
+    — this is what makes "monitors" in the architecture diagram real,
+    instead of the task just declaring success the moment spark-submit
+    returns.
 """
 
+import time
 from datetime import datetime
 
+import requests
 from airflow import DAG
+from airflow.exceptions import AirflowFailException, AirflowSkipException
 from airflow.models import Connection
+from airflow.operators.python import PythonOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
 SNOWFLAKE_CONN_ID = "snowflake_default"
 TARGET_SCHEMA = "whether_q3"
+
+# Passed to the job below as the `spark.app.name` conf — this is the one
+# place the name is defined; spark/jobs/etl_weather_stream_to_snowflake.py
+# takes it from SparkConf rather than hardcoding it too.
+APP_NAME = "weather_kafka_to_snowflake"
+SPARK_MASTER_STATUS_URL = "http://spark-master:8080/json/"
+VERIFY_TIMEOUT_SECONDS = 120
+VERIFY_POLL_INTERVAL_SECONDS = 10
+
+
+def _spark_master_state() -> dict:
+    response = requests.get(SPARK_MASTER_STATUS_URL, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def _app_is_active(state: dict) -> bool:
+    """True if APP_NAME shows up as an active app or an active driver.
+
+    activedrivers can lag behind activeapps right after submission (the
+    driver process has to start before it registers a SparkContext under
+    APP_NAME), so both lists are checked. Field access is defensive
+    (.get) since the exact JSON shape isn't a stable public API.
+    """
+    active_app_names = {a.get("name") for a in state.get("activeapps", [])}
+    active_driver_names = {
+        d.get("desc", {}).get("name") for d in state.get("activedrivers", [])
+    }
+    return APP_NAME in active_app_names or APP_NAME in active_driver_names
+
+
+def check_not_already_running(**context):
+    if _app_is_active(_spark_master_state()):
+        raise AirflowSkipException(
+            f"{APP_NAME} is already an active app/driver on spark-master — "
+            "skipping resubmission to avoid duplicate concurrent streams."
+        )
+
+
+def verify_job_running(**context):
+    deadline = time.time() + VERIFY_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        if _app_is_active(_spark_master_state()):
+            return
+        time.sleep(VERIFY_POLL_INTERVAL_SECONDS)
+    raise AirflowFailException(
+        f"{APP_NAME} did not appear as an active app/driver on spark-master "
+        f"within {VERIFY_TIMEOUT_SECONDS}s of submission — the driver likely "
+        "failed to start. Check spark-master:8080 and spark-worker logs."
+    )
 
 
 def _snowflake_conf() -> dict:
@@ -70,12 +140,18 @@ with DAG(
     tags=["weather", "streaming", "spark", "snowflake"],
 ) as dag:
 
+    check_not_already_running = PythonOperator(
+        task_id="check_not_already_running",
+        python_callable=check_not_already_running,
+    )
+
     launch_streaming_job = SparkSubmitOperator(
         task_id="launch_streaming_job",
         application="/opt/airflow/plugins/spark/jobs/etl_weather_stream_to_snowflake.py",
         conn_id="spark_default",
         deploy_mode="cluster",
         conf={
+            "spark.app.name": APP_NAME,
             "spark.driver.supervise": "true",  # auto-restart the driver if the worker running it dies
             **_snowflake_conf(),
         },
@@ -85,3 +161,10 @@ with DAG(
             "net.snowflake:snowflake-jdbc:3.16.1"
         ),
     )
+
+    verify_job_running = PythonOperator(
+        task_id="verify_job_running",
+        python_callable=verify_job_running,
+    )
+
+    check_not_already_running >> launch_streaming_job >> verify_job_running

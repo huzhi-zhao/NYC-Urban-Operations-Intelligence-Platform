@@ -68,13 +68,15 @@ def _make_write_to_snowflake(sf_options: dict):
 
 
 def main():
+    # spark.app.name is set via --conf by dags/dag_weather_stream_to_snowflake.py
+    # (APP_NAME there), not hardcoded here — that DAG also polls spark-master
+    # for a running app under this exact name to dedup submissions and verify
+    # the job actually started, so there's one source of truth for the name.
     spark = (
-        SparkSession.builder.appName("weather_kafka_to_snowflake")
-        .config(
+        SparkSession.builder.config(
             "spark.hadoop.google.cloud.auth.service.account.json.keyfile",
             "/opt/airflow/keys/pace-lab-bdp-sa-key.json",
-        )
-        .getOrCreate()
+        ).getOrCreate()
     )
 
     raw_stream = (
