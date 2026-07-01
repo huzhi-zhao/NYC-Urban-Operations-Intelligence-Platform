@@ -56,6 +56,15 @@ def _snowflake_options() -> dict:
         "sfWarehouse": query.get("warehouse", ["COMPUTE_WH"])[0],
         "sfRole": query.get("role", ["ACCOUNTADMIN"])[0],
         "dbtable": SNOWFLAKE_TABLE,
+        # weather_stream_raw has a 6th column, ingested_at, with a
+        # DEFAULT CURRENT_TIMESTAMP() that this job deliberately never
+        # writes (see write_to_snowflake below). The connector's default
+        # column_mapping="order" requires the staged file's column count to
+        # match the table exactly (5 vs 6 -> "Number of columns in file
+        # does not match that of the corresponding table"), so writes have
+        # to be matched by name instead — that also lets the DEFAULT fire
+        # for the column this DataFrame doesn't supply.
+        "column_mapping": "name",
     }
 
 
