@@ -32,6 +32,9 @@ x-airflow-common: &airflow-common
     # Spark connection consumed by SparkSubmitOperator(conn_id="spark_default").
     # spark-master must already be reachable by container name on bigdata-net.
     AIRFLOW_CONN_SPARK_DEFAULT: 'spark://spark-master:7077?deploy-mode=client'
+    # Snowflake connection consumed by SnowflakeHook(snowflake_conn_id="snowflake_default").
+    # Actual value is supplied via .env (not committed) as AIRFLOW_CONN_SNOWFLAKE_DEFAULT.
+    AIRFLOW_CONN_SNOWFLAKE_DEFAULT: ${AIRFLOW_CONN_SNOWFLAKE_DEFAULT}
   volumes:
     - ../../dags:/opt/airflow/dags
     - ../../ingestion:/opt/airflow/plugins/ingestion
