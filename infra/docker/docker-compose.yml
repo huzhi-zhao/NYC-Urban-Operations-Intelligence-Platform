@@ -96,6 +96,24 @@ services:
     <<: *airflow-common
     command: airflow dag-processor
 
+  weather-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.weather-producer
+    container_name: weather-producer
+    volumes:
+      - ../../scripts/weather_producer.py:/app/weather_producer.py:ro
+    networks:
+      - bigdata-net
+    # depends_on omitted: kafka is a service in the separate
+    # /opt/pace_lab/kafka/docker-compose.yml stack, not this file — Compose
+    # can't express a dependency across files. weather_producer.py doesn't
+    # retry the KafkaProducer connection itself (NoBrokersAvailableError is
+    # fatal on construction), so if kafka isn't up yet this container will
+    # crash-loop until `restart: unless-stopped` catches up with it — bring
+    # up /opt/pace_lab/kafka before this stack to avoid the churn.
+    restart: unless-stopped
+
   spark-master:
     image: apache/spark:3.5.1  # master only coordinates — no UDFs run here
     container_name: spark-master

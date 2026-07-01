@@ -1,0 +1,13 @@
+# Standalone image for scripts/weather_producer.py — a long-running Kafka
+# producer, not an Airflow-managed task (Airflow's execution model is
+# finite DAG runs, not persistent processes; see architecture.svg, where
+# the producer sits in the "External source" band, not the Airflow band).
+#
+# scripts/weather_producer.py itself is bind-mounted in at runtime (see
+# docker-compose.yml), same convention as the spark/ volume mount on
+# spark-worker — no rebuild needed for a script-only change.
+FROM python:3.11-slim
+
+RUN pip install --no-cache-dir kafka-python==2.0.2
+
+CMD ["python", "/app/weather_producer.py"]
