@@ -151,7 +151,7 @@ services:
       --conf spark.app.name=weather_kafka_to_snowflake
       --conf spark.jars.ivy=/tmp/ivy2
       --jars https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar
-      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:2.16.0-spark_3.5,net.snowflake:snowflake-jdbc:3.16.1
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:3.1.3,net.snowflake:snowflake-jdbc:3.16.1
       spark/jobs/etl_weather_stream_to_snowflake.py"
     networks:
       - bigdata-net

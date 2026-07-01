@@ -3,7 +3,7 @@ Spark Structured Streaming job: consumes the `weather_data` Kafka topic
 and writes each micro-batch into the Snowflake RAW table `weather_stream_raw`.
 
 Submitted via spark-submit in `client` deploy mode:
-    --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:2.16.0-spark_3.5,net.snowflake:snowflake-jdbc:3.16.1
+    --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:3.1.3,net.snowflake:snowflake-jdbc:3.16.1
 
 Not `cluster` deploy mode: Spark standalone's cluster manager rejects
 Python applications in cluster mode outright ("Cluster deploy mode is
