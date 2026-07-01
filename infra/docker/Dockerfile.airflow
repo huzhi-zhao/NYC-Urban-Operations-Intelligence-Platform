@@ -29,6 +29,8 @@ RUN pip install --no-cache-dir \
     google-cloud-storage \
     apache-airflow-providers-fab \
     apache-airflow-providers-apache-spark \
+    apache-airflow-providers-snowflake \
+    pandas \
     pyspark==3.5.1
 
 ENV JAVA_HOME=/usr/lib/jvm/default-java

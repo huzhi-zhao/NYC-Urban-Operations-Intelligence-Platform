@@ -39,6 +39,7 @@ x-airflow-common: &airflow-common
     - ../../config:/opt/airflow/plugins/config
     - ../../spark:/opt/airflow/plugins/spark
     - ../../infra/terraform/keys:/opt/airflow/keys:ro
+    - ../../data:/opt/airflow/data:ro
     - airflow-logs:/opt/airflow/logs
   depends_on:
     postgres:
