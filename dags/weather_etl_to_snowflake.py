@@ -77,10 +77,10 @@ with DAG(
     dag_id="weather_etl_to_snowflake",
     default_args=default_args,
     description="Extract weather_raw.csv, clean it, load into Snowflake",
-    schedule_interval="@daily",
+    schedule="@daily",
     start_date=datetime(2026, 6, 1),
     catchup=False,
-    tags=["weather", "snowflake"],
+    tags=["weather", "snowflake","demo"],
 ) as dag:
 
     extract_task = PythonOperator(
