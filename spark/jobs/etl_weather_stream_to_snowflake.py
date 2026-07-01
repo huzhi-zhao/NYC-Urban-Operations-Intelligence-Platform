@@ -117,6 +117,14 @@ def main():
         .select(from_json(col("json_str"), schema).alias("data"))
         .select("data.*")
         .withColumn("event_time", current_timestamp())
+        # Written explicitly rather than left to the table's
+        # DEFAULT CURRENT_TIMESTAMP(): the Snowflake connector enforces an
+        # exact column-count match between the DataFrame and the table
+        # regardless of column_mapping ("UnsupportedOperationException:
+        # column number of Spark Dataframe (5) doesn't match column number
+        # of Snowflake Table (6)"), so a 5-column write can never succeed
+        # against this 6-column table no matter the mapping mode.
+        .withColumn("ingested_at", current_timestamp())
     )
 
     query = (
