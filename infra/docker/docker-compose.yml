@@ -114,6 +114,42 @@ services:
     # up /opt/pace_lab/kafka before this stack to avoid the churn.
     restart: unless-stopped
 
+  weather-stream-job:
+    # Same base image as spark-master/spark-worker — ships spark-submit and
+    # PySpark already, no custom build needed. client deploy mode is the
+    # only option here: Spark standalone's cluster manager rejects Python
+    # apps in cluster mode outright (see the docstring in
+    # spark/jobs/etl_weather_stream_to_snowflake.py), which means this
+    # process itself has to BE the driver — hence its own long-running
+    # service with restart: unless-stopped, same pattern as weather-producer,
+    # rather than something an Airflow task submits and waits on.
+    image: apache/spark:3.5.1
+    container_name: weather-stream-job
+    env_file:
+      - ../../.env
+    volumes:
+      - ../../spark:/opt/spark-app/spark:ro
+      - ../../infra/terraform/keys/pace-lab-bdp-sa-key.json:/opt/airflow/keys/pace-lab-bdp-sa-key.json:ro
+    working_dir: /opt/spark-app
+    environment:
+      # Only matters if the job ever imports from the spark.* package
+      # (spark/transforms, spark/schemas) — it doesn't today, kept for
+      # consistency with the same mount path used on spark-worker.
+      PYTHONPATH: /opt/spark-app
+    command: >
+      /opt/spark/bin/spark-submit
+      --master spark://spark-master:7077
+      --deploy-mode client
+      --conf spark.app.name=weather_kafka_to_snowflake
+      --jars https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,net.snowflake:spark-snowflake_2.12:2.16.0-spark_3.5,net.snowflake:snowflake-jdbc:3.16.1
+      spark/jobs/etl_weather_stream_to_snowflake.py
+    networks:
+      - bigdata-net
+    depends_on:
+      - spark-master
+    restart: unless-stopped
+
   spark-master:
     image: apache/spark:3.5.1  # master only coordinates — no UDFs run here
     container_name: spark-master
